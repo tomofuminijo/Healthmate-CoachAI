@@ -18,6 +18,20 @@ import readline
 from botocore.exceptions import ClientError
 from health_coach_ai.agent import invoke_health_coach
 
+# ========================================
+# テスト設定（ここで変更可能）
+# ========================================
+
+# タイムゾーン設定
+# 例: 'Asia/Tokyo', 'America/New_York', 'Europe/London', 'America/Los_Angeles'
+TEST_TIMEZONE = 'Asia/Tokyo'
+
+# 言語設定  
+# 例: 'ja', 'en', 'en-us', 'zh', 'ko', 'es', 'fr', 'de'
+TEST_LANGUAGE = 'ja'
+
+# ========================================
+
 
 class LocalTestSession:
     """ローカル手動テスト用セッションクラス"""
@@ -188,9 +202,13 @@ class LocalTestSession:
         try:
             self.conversation_count += 1
             
-            # グローバル変数にJWTトークンを設定（エージェントが使用するため）
+            # グローバル変数にJWTトークン、タイムゾーン、言語を設定（エージェントが使用するため）
             import health_coach_ai.agent as agent_module
             agent_module._current_jwt_token = self.jwt_token
+            agent_module._current_timezone = TEST_TIMEZONE
+            agent_module._current_language = TEST_LANGUAGE
+            
+            print(f"DEBUG: Setting timezone: {TEST_TIMEZONE}, language: {TEST_LANGUAGE}")
             
             # ローカルエージェントを呼び出し
             response = await invoke_health_coach(query)
@@ -210,6 +228,10 @@ def print_banner():
     print("このプログラムでは、ローカル環境でHealthCoachAIエージェントを")
     print("手動でテストできます。JWTトークンは自動生成され、")
     print("実際のMCP Gatewayと連携します。")
+    print()
+    print(f"🌍 テスト設定:")
+    print(f"   タイムゾーン: {TEST_TIMEZONE}")
+    print(f"   言語: {TEST_LANGUAGE}")
     print()
 
 

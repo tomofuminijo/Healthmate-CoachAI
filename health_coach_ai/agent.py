@@ -12,6 +12,7 @@ import json
 import base64
 from datetime import datetime
 from typing import Optional
+import pytz
 from strands import Agent, tool
 from bedrock_agentcore.runtime import BedrockAgentCoreApp, BedrockAgentCoreContext
 
@@ -26,8 +27,10 @@ def _get_gateway_endpoint() -> str:
     region = os.environ.get('AWS_REGION', 'us-west-2')
     return f"https://{gateway_id}.gateway.bedrock-agentcore.{region}.amazonaws.com/mcp"
 
-# グローバルJWTトークン（一時的なハック）
+# グローバル変数（一時的なハック）
 _current_jwt_token = None
+_current_timezone = None
+_current_language = None
 
 
 # JWT Token ヘルパー関数
@@ -116,6 +119,75 @@ def _get_user_id_from_jwt():
     except Exception as e:
         print(f"DEBUG: ユーザーID取得エラー: {e}")
         return None
+
+
+def _get_user_timezone():
+    """ペイロードから設定されたタイムゾーンを取得"""
+    global _current_timezone
+    
+    if _current_timezone:
+        print(f"DEBUG: Using timezone from payload: {_current_timezone}")
+        return _current_timezone
+    else:
+        print(f"DEBUG: No timezone found in payload, using default: Asia/Tokyo")
+        return 'Asia/Tokyo'
+
+
+def _get_user_language():
+    """ペイロードから設定された言語を取得"""
+    global _current_language
+    
+    if _current_language:
+        print(f"DEBUG: Using language from payload: {_current_language}")
+        return _current_language
+    else:
+        print(f"DEBUG: No language found in payload, using default: ja")
+        return 'ja'
+
+
+def _get_language_name(language_code: str) -> str:
+    """言語コードを言語名に変換"""
+    language_map = {
+        'ja': '日本語',
+        'en': 'English',
+        'en-us': 'English (US)',
+        'en-gb': 'English (UK)',
+        'zh': '中文',
+        'zh-cn': '中文 (简体)',
+        'zh-tw': '中文 (繁體)',
+        'ko': '한국어',
+        'es': 'Español',
+        'fr': 'Français',
+        'de': 'Deutsch',
+        'it': 'Italiano',
+        'pt': 'Português',
+        'ru': 'Русский'
+    }
+    return language_map.get(language_code.lower(), language_code)
+
+
+def _get_localized_datetime(timezone_str: str = 'Asia/Tokyo'):
+    """指定されたタイムゾーンでの現在日時を取得"""
+    try:
+        # タイムゾーンの有効性を確認
+        try:
+            user_timezone = pytz.timezone(timezone_str)
+        except pytz.exceptions.UnknownTimeZoneError:
+            print(f"DEBUG: Invalid timezone: {timezone_str}, using Asia/Tokyo")
+            user_timezone = pytz.timezone('Asia/Tokyo')
+        
+        # UTC時刻を取得してユーザーのタイムゾーンに変換
+        utc_now = datetime.now(pytz.UTC)
+        local_datetime = utc_now.astimezone(user_timezone)
+        
+        return local_datetime
+        
+    except Exception as e:
+        print(f"DEBUG: ローカル日時取得エラー: {e}")
+        # エラー時はJSTで返す
+        jst = pytz.timezone('Asia/Tokyo')
+        utc_now = datetime.now(pytz.UTC)
+        return utc_now.astimezone(jst)
 
 
 async def _call_mcp_gateway(method: str, params: dict = None):
@@ -252,8 +324,13 @@ async def _create_health_coach_agent():
     # JWTトークンからユーザーIDを取得
     user_id = _get_user_id_from_jwt()
     
-    # 現在日時を取得
-    current_datetime = datetime.now()
+    # ペイロードからタイムゾーンと言語を取得
+    user_timezone = _get_user_timezone()
+    user_language_code = _get_user_language()
+    user_language_name = _get_language_name(user_language_code)
+    
+    # ユーザーのタイムゾーンに合わせた現在日時を取得
+    current_datetime = _get_localized_datetime(user_timezone)
     current_date = current_datetime.strftime("%Y年%m月%d日")
     current_time = current_datetime.strftime("%H時%M分")
     current_weekday = ["月", "火", "水", "木", "金", "土", "日"][current_datetime.weekday()]
@@ -263,8 +340,17 @@ async def _create_health_coach_agent():
 ## 現在の日時情報
 - 今日の日付: {current_date} ({current_weekday}曜日)
 - 現在時刻: {current_time}
+- タイムゾーン: {user_timezone}
 - ISO形式: {current_datetime.isoformat()}
 - この情報を使用して、適切な時間帯に応じたアドバイスや挨拶を提供してください
+"""
+    
+    # 言語設定情報をシステムプロンプトに組み込み
+    language_context = f"""
+## 言語設定情報
+- ユーザーの優先言語: {user_language_name} ({user_language_code})
+- この言語設定に基づいて、適切な言語で応答してください
+- 日本語以外の言語が設定されている場合は、その言語で応答することを優先してください
 """
     
     # ユーザーID情報をシステムプロンプトに組み込み
@@ -290,6 +376,8 @@ async def _create_health_coach_agent():
 あなたは親しみやすい健康コーチAIです。ユーザーの健康目標達成を支援します。
 
 {datetime_context}
+
+{language_context}
 
 {user_context}
 
@@ -463,13 +551,55 @@ async def invoke(payload):
         
         jwt_token_from_payload = search_jwt_recursive(payload)
     
-    # グローバル変数にJWTトークンを設定（一時的なハック）
+    # タイムゾーンをペイロードから取得
+    timezone_from_payload = None
+    if "timezone" in payload:
+        timezone_from_payload = payload["timezone"]
+        print(f"DEBUG: Timezone from payload.timezone: {timezone_from_payload}")
+    elif "input" in payload and isinstance(payload["input"], dict) and "timezone" in payload["input"]:
+        timezone_from_payload = payload["input"]["timezone"]
+        print(f"DEBUG: Timezone from payload.input.timezone: {timezone_from_payload}")
+    elif "sessionState" in payload and "sessionAttributes" in payload["sessionState"]:
+        session_attrs = payload["sessionState"]["sessionAttributes"]
+        if "timezone" in session_attrs:
+            timezone_from_payload = session_attrs["timezone"]
+            print(f"DEBUG: Timezone from sessionState: {timezone_from_payload}")
+    
+    # 言語をペイロードから取得
+    language_from_payload = None
+    if "language" in payload:
+        language_from_payload = payload["language"]
+        print(f"DEBUG: Language from payload.language: {language_from_payload}")
+    elif "input" in payload and isinstance(payload["input"], dict) and "language" in payload["input"]:
+        language_from_payload = payload["input"]["language"]
+        print(f"DEBUG: Language from payload.input.language: {language_from_payload}")
+    elif "sessionState" in payload and "sessionAttributes" in payload["sessionState"]:
+        session_attrs = payload["sessionState"]["sessionAttributes"]
+        if "language" in session_attrs:
+            language_from_payload = session_attrs["language"]
+            print(f"DEBUG: Language from sessionState: {language_from_payload}")
+    
+    # グローバル変数に設定（一時的なハック）
     if jwt_token_from_payload:
-        global _current_jwt_token
+        global _current_jwt_token, _current_timezone, _current_language
         _current_jwt_token = jwt_token_from_payload
         print(f"DEBUG: Set global JWT token: {jwt_token_from_payload[:50]}...")
     else:
         print(f"DEBUG: No JWT token found in payload")
+    
+    if timezone_from_payload:
+        _current_timezone = timezone_from_payload
+        print(f"DEBUG: Set global timezone: {timezone_from_payload}")
+    else:
+        _current_timezone = None
+        print(f"DEBUG: No timezone found in payload")
+    
+    if language_from_payload:
+        _current_language = language_from_payload
+        print(f"DEBUG: Set global language: {language_from_payload}")
+    else:
+        _current_language = None
+        print(f"DEBUG: No language found in payload")
     
     if not prompt:
         yield {"event": {"contentBlockDelta": {"delta": {"text": "こんにちは！健康に関してどのようなサポートが必要ですか？"}}}}

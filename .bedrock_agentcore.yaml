@@ -30,7 +30,7 @@ agents:
     bedrock_agentcore:
       agent_id: health_coach_ai-87qw32GDCf
       agent_arn: arn:aws:bedrock-agentcore:us-west-2:718691933423:runtime/health_coach_ai-87qw32GDCf
-      agent_session_id: afea8e71-aad0-457e-a004-10b8a66800d7
+      agent_session_id: 52522b55-5fd2-4ba2-8ba3-9ee34631a60a
     codebuild:
       project_name: bedrock-agentcore-health_coach_ai-builder
       execution_role: arn:aws:iam::718691933423:role/AmazonBedrockAgentCoreSDKCodeBuild-us-west-2-d3139e34fa

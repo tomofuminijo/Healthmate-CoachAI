@@ -22,6 +22,20 @@ import os
 from botocore.exceptions import ClientError
 from test_config_helper import test_config
 
+# ========================================
+# テスト設定（ここで変更可能）
+# ========================================
+
+# タイムゾーン設定
+# 例: 'Asia/Tokyo', 'America/New_York', 'Europe/London', 'America/Los_Angeles'
+TEST_TIMEZONE = 'Euro/London'
+
+# 言語設定  
+# 例: 'ja', 'en', 'en-us', 'zh', 'ko', 'es', 'fr', 'de'
+TEST_LANGUAGE = 'en'
+
+# ========================================
+
 
 class DeployedAgentTestSession:
     """デプロイ済みエージェント手動テスト用セッションクラス"""
@@ -197,16 +211,22 @@ class DeployedAgentTestSession:
         try:
             self.conversation_count += 1
             
-            # JWTトークンをペイロードに直接含める
+            # JWTトークン、タイムゾーン、言語をペイロードに含める
             payload = json.dumps({
                 "prompt": query,
                 "jwt_token": self.jwt_token,
+                "timezone": TEST_TIMEZONE,
+                "language": TEST_LANGUAGE,
                 "sessionState": {
                     "sessionAttributes": {
-                        "jwt_token": self.jwt_token
+                        "jwt_token": self.jwt_token,
+                        "timezone": TEST_TIMEZONE,
+                        "language": TEST_LANGUAGE
                     }
                 }
             })
+            
+            print(f"DEBUG: Setting timezone: {TEST_TIMEZONE}, language: {TEST_LANGUAGE}")
             
             # ストリーミング対応のsubprocessを開始
             process = subprocess.Popen([
@@ -273,13 +293,17 @@ class DeployedAgentTestSession:
         try:
             self.conversation_count += 1
             
-            # JWTトークンをペイロードに直接含める
+            # JWTトークン、タイムゾーン、言語をペイロードに含める
             payload = json.dumps({
                 "prompt": query,
                 "jwt_token": self.jwt_token,
+                "timezone": TEST_TIMEZONE,
+                "language": TEST_LANGUAGE,
                 "sessionState": {
                     "sessionAttributes": {
-                        "jwt_token": self.jwt_token
+                        "jwt_token": self.jwt_token,
+                        "timezone": TEST_TIMEZONE,
+                        "language": TEST_LANGUAGE
                     }
                 }
             })
@@ -324,6 +348,10 @@ def print_banner():
     print("手動でテストできます。JWTトークンは自動生成され、")
     print("実際のAgentCore Runtime環境と連携します。")
     print("📡 リアルタイムストリーミング対応で、エージェントの応答が即座に表示されます。")
+    print()
+    print(f"🌍 テスト設定:")
+    print(f"   タイムゾーン: {TEST_TIMEZONE}")
+    print(f"   言語: {TEST_LANGUAGE}")
     print()
 
 
