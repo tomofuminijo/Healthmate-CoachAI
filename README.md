@@ -271,6 +271,58 @@ python manual_test_deployed_agent.py
    - JWTトークンがエージェントに自動的に渡される
    - エージェントがユーザーIDを自動抽出して動作
 
+## 🗑️ アンデプロイ（削除）
+
+HealthCoachAIエージェントをAWSから完全に削除する場合：
+
+### ワンコマンドアンデプロイ
+
+```bash
+# 全てのAWSリソースを削除
+./destroy_from_aws.sh
+```
+
+このスクリプトは以下を実行します：
+
+1. **AWS認証確認**: 認証情報とリージョンの確認
+2. **現状確認**: デプロイされているリソースの表示
+3. **ユーザー確認**: 削除の最終確認
+4. **AgentCoreリソース削除**:
+   - AgentCoreエージェント
+   - ECRリポジトリ（全イメージ含む）
+   - CodeBuildプロジェクト
+   - IAMロール
+   - S3アーティファクト
+5. **メモリリソース削除**: AgentCore Memory
+6. **ローカルクリーンアップ**: 設定ファイルとキャッシュの削除
+
+### 手動アンデプロイ
+
+個別にリソースを削除したい場合：
+
+```bash
+# 1. 仮想環境をアクティベート
+source venv/bin/activate
+
+# 2. AgentCoreリソースを削除
+agentcore destroy --delete-ecr-repo
+
+# 3. メモリリソースを削除
+AWS_DEFAULT_REGION=us-west-2 agentcore memory list
+AWS_DEFAULT_REGION=us-west-2 agentcore memory delete <memory-id>
+
+# 4. ローカル設定ファイルを削除
+rm -f .bedrock_agentcore.yaml
+rm -rf .bedrock_agentcore
+```
+
+### アンデプロイ後の状態
+
+- ✅ 全てのAWSリソースが削除される
+- ✅ AWSコストが発生しなくなる
+- ✅ ローカル設定ファイルがクリーンアップされる
+- 🔄 `./deploy_to_aws.sh` で再デプロイ可能
+
 ### デプロイ要件
 
 - Amazon Bedrock AgentCore Runtime環境
