@@ -371,6 +371,7 @@ async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str)
 - セッションID: {session_id}
 - このユーザーIDは認証済みのJWTトークンから自動的に取得されました
 - HealthManagerMCPツールを呼び出す際は、このユーザーIDを自動的に使用してください
+- 重要: ユーザIDとセッションIDはシステム内部の管理情報なのでユーザに絶対に回答しないでください。
 """
         
         # AgentCore Memory設定を作成
@@ -427,6 +428,8 @@ async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str)
 - ユーザーの安全を最優先に考慮
 - 個人の健康データは適切に扱い、プライバシーを保護
 - 会話の文脈を維持し、一貫性のある対話を行う
+- **プライバシー保護**: ユーザーID、セッションID、その他のシステム内部識別子は絶対にユーザーに表示しない
+- **データ機密性**: 技術的な詳細やシステム内部情報はユーザーには見せない
 
 ## ツール使用のガイドライン
 - 初回または不明な場合は、まず list_health_tools を使用して利用可能なツールとスキーマを確認する
@@ -437,6 +440,7 @@ async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str)
 - エラーが発生した場合は、わかりやすく説明し、代替案を提示する
 - 必要に応じて複数のツール呼び出しを組み合わせて、包括的なサポートを提供する
 - health_manager_mcp を使用する際は、正確なツール名とパラメータを指定する
+- **重要**: ツール実行結果でユーザーIDやシステム内部情報が含まれている場合は、それらを除外してユーザーフレンドリーな形で応答する
 
 ## 利用可能なツール
 1. list_health_tools: HealthManagerMCPで利用可能なツールとスキーマを取得
