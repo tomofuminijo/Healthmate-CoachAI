@@ -9,7 +9,7 @@ ENV UV_SYSTEM_PYTHON=1 \
     DOCKER_CONTAINER=1 \
     AWS_REGION=us-west-2 \
     AWS_DEFAULT_REGION=us-west-2 \
-    BEDROCK_AGENTCORE_MEMORY_ID=health_coach_ai_mem-cALEXrEAb4 \
+    BEDROCK_AGENTCORE_MEMORY_ID=health_coach_ai_mem-yxqD6w75pO \
     BEDROCK_AGENTCORE_MEMORY_NAME=health_coach_ai_mem
 
 

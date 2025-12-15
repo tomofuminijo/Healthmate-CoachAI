@@ -224,7 +224,69 @@ class DeployedAgentTestSession:
         self.conversation_count = 0
         self.jwt_token_file = None
     
-    async def test_agent_query_streaming(self, query: str):
+    async def run_memory_continuity_test(self, session_id: str):
+        """セッション継続性の自動テストを実行"""
+        if not self.session_active or not self.jwt_token:
+            print("❌ セッションまたはJWTトークンが無効です。")
+            return
+        
+        print("🧠 AgentCore Memoryセッション継続性テスト")
+        print("=" * 60)
+        print(f"📋 テストセッションID: {session_id}")
+        print()
+        
+        # テスト1: 名前の記憶
+        print("📝 テスト1: 名前の記憶と呼び出し")
+        print("-" * 40)
+        
+        test1_query = "私の名前はジョニーです。好きなものはバナナです。"
+        print(f"👤 ユーザー: {test1_query}")
+        print("🤖 AI応答:")
+        await self.test_agent_query_streaming(test1_query, session_id)
+        
+        print("\n⏳ 少し待機してから次のテストを実行...")
+        await asyncio.sleep(2)
+        
+        test2_query = "私の名前は何ですか？また、私が好きなものは何でしたか？"
+        print(f"👤 ユーザー: {test2_query}")
+        print("🤖 AI応答:")
+        await self.test_agent_query_streaming(test2_query, session_id)
+        
+        print("\n⏳ 少し待機してから次のテストを実行...")
+        await asyncio.sleep(2)
+        
+        # テスト2: 会話の文脈継続
+        print("\n📝 テスト2: 会話の文脈継続")
+        print("-" * 40)
+        
+        test3_query = "健康目標として、毎日1万歩歩くことを設定したいです。"
+        print(f"👤 ユーザー: {test3_query}")
+        print("🤖 AI応答:")
+        await self.test_agent_query_streaming(test3_query, session_id)
+        
+        print("\n⏳ 少し待機してから次のテストを実行...")
+        await asyncio.sleep(2)
+        
+        test4_query = "先ほど設定した目標について、進捗を確認する方法を教えてください。"
+        print(f"👤 ユーザー: {test4_query}")
+        print("🤖 AI応答:")
+        await self.test_agent_query_streaming(test4_query, session_id)
+        
+        print("\n" + "=" * 60)
+        print("✅ セッション継続性テスト完了")
+        print()
+        print("📊 テスト結果の確認ポイント:")
+        print("  1. AIが「ジョニー」という名前を覚えているか")
+        print("  2. AIが「バナナ」が好きなことを覚えているか")
+        print("  3. AIが「1万歩」の健康目標を覚えているか")
+        print("  4. 会話の文脈が適切に継続されているか")
+        print()
+        print("💡 期待される動作:")
+        print("  - 同じセッションIDでの会話では前の内容を参照する")
+        print("  - AgentCore Memoryが正常に動作している")
+        print("  - セッション管理が適切に統合されている")
+    
+    async def test_agent_query_streaming(self, query: str, session_id: str = None):
         """デプロイされたエージェントにクエリを送信（ストリーミング対応）"""
         if not self.session_active or not self.jwt_token or not self.agent_runtime_arn:
             print("❌ セッションまたはJWTトークンが無効です。")
@@ -232,6 +294,12 @@ class DeployedAgentTestSession:
         
         try:
             self.conversation_count += 1
+            
+            # セッションIDが指定されていない場合は生成
+            if not session_id:
+                session_id = f'healthmate-test-session-{uuid.uuid4().hex}'
+            
+            print(f"🔗 使用セッションID: {session_id}")
             
             # JWTトークン、タイムゾーン、言語をペイロードに含める
             payload = {
@@ -243,7 +311,8 @@ class DeployedAgentTestSession:
                     "sessionAttributes": {
                         "jwt_token": self.jwt_token,
                         "timezone": TEST_TIMEZONE,
-                        "language": TEST_LANGUAGE
+                        "language": TEST_LANGUAGE,
+                        "session_id": session_id
                     }
                 }
             }
@@ -255,6 +324,7 @@ class DeployedAgentTestSession:
             # boto3 bedrock-agentcore クライアントを使用してエージェントを呼び出し
             response = self.agentcore_client.invoke_agent_runtime(
                 agentRuntimeArn=self.agent_runtime_arn,
+                runtimeSessionId=session_id,
                 payload=json.dumps(payload)
             )
             
@@ -454,6 +524,7 @@ def print_help():
     print("  clear    - 画面をクリア")
     print("  status   - セッション状態とユーザーIDを表示")
     print("  restart  - 認証を再実行")
+    print("  memory_test - セッション継続性の自動テストを実行")
     print()
     print("⌨️  入力方法:")
     print("  単一行入力 - テキスト入力後、Enterで実行")
@@ -466,6 +537,11 @@ def print_help():
     print("  私の健康データを確認してください")
     print("  新規ユーザーを作成してください")
     print("  健康目標を設定したいです")
+    print()
+    print("🔗 セッション管理テスト例:")
+    print("  1. 私の名前はジョニーです")
+    print("  2. 私の名前を覚えていますか？")
+    print("  (同じセッションIDで会話の継続性をテスト)")
     print()
     print("🚀 デプロイ環境:")
     print("  このプログラムはAWSにデプロイされたエージェントをテストします")
@@ -507,6 +583,12 @@ async def main():
     print("   'help' でコマンド一覧を表示できます。")
     print("   📊 'status' コマンドでユーザーIDを再確認できます。")
     print("   ⌨️  複数行入力可能（空行で実行）")
+    print()
+    
+    # セッション管理テスト用のセッションID
+    test_session_id = f'healthmate-test-session-{uuid.uuid4().hex}'
+    print(f"🔗 テスト用セッションID: {test_session_id}")
+    print("   このセッションIDで会話の継続性をテストします")
     print()
     
     try:
@@ -566,9 +648,15 @@ async def main():
                 print()
                 continue
             
+            elif user_input.lower() == 'memory_test':
+                print("🧠 セッション継続性テストを開始します...")
+                await session.run_memory_continuity_test(test_session_id)
+                print()
+                continue
+            
             # デプロイされたエージェントにクエリを送信（ストリーミング）
             print("\n🤔 デプロイされたエージェント (AgentCore Runtime) に送信中...")
-            await session.test_agent_query_streaming(user_input)
+            await session.test_agent_query_streaming(user_input, test_session_id)
             print()
     
     finally:

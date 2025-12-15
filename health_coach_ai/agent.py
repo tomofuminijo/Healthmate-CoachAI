@@ -15,6 +15,8 @@ from typing import Optional
 import pytz
 from strands import Agent, tool
 from bedrock_agentcore.runtime import BedrockAgentCoreApp, BedrockAgentCoreContext
+from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
+from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
 
 
 # 環境変数設定管理
@@ -27,7 +29,7 @@ def _get_gateway_endpoint() -> str:
     region = os.environ.get('AWS_REGION', 'us-west-2')
     return f"https://{gateway_id}.gateway.bedrock-agentcore.{region}.amazonaws.com/mcp"
 
-# グローバル変数（一時的なハック）
+# グローバル変数（JWT処理用）
 _current_jwt_token = None
 _current_timezone = None
 _current_language = None
@@ -103,7 +105,7 @@ def _get_jwt_token():
 
 
 def _get_user_id_from_jwt():
-    """JWTトークンからユーザーIDを取得（同期版）"""
+    """JWTトークンからユーザーIDを取得（エラーハンドリング強化版）"""
     try:
         jwt_token = _get_jwt_token()
         if not jwt_token:
@@ -111,13 +113,24 @@ def _get_user_id_from_jwt():
             return None
         
         payload = _decode_jwt_payload(jwt_token)
+        if not payload:
+            print(f"DEBUG: Failed to decode JWT payload")
+            return None
+            
         user_id = payload.get('sub')  # Cognitoの場合、subフィールドにユーザーIDが含まれる
+        
+        if not user_id:
+            print(f"DEBUG: No 'sub' field found in JWT payload")
+            # フォールバック: 他のフィールドを試す
+            user_id = payload.get('username') or payload.get('email') or payload.get('user_id')
+            if user_id:
+                print(f"DEBUG: Using fallback user ID: {user_id}")
         
         print(f"DEBUG: Extracted user ID from JWT: {user_id}")
         return user_id
         
     except Exception as e:
-        print(f"DEBUG: ユーザーID取得エラー: {e}")
+        print(f"ERROR: ユーザーID取得エラー: {e}")
         return None
 
 
@@ -318,11 +331,125 @@ async def health_manager_mcp(tool_name: str, arguments: dict) -> str:
         return f"HealthManagerMCP呼び出しエラー: {e}"
 
 
-async def _create_health_coach_agent():
-    """HealthCoachAIエージェントを作成（ユーザーID自動設定付き）"""
+async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str):
+    """AgentCoreMemorySessionManagerを使用してHealthCoachAIエージェントを作成（エラーハンドリング付き）"""
     
-    # JWTトークンからユーザーIDを取得
-    user_id = _get_user_id_from_jwt()
+    try:
+        # ペイロードからタイムゾーンと言語を取得
+        user_timezone = _get_user_timezone()
+        user_language_code = _get_user_language()
+        user_language_name = _get_language_name(user_language_code)
+        
+        # ユーザーのタイムゾーンに合わせた現在日時を取得
+        current_datetime = _get_localized_datetime(user_timezone)
+        current_date = current_datetime.strftime("%Y年%m月%d日")
+        current_time = current_datetime.strftime("%H時%M分")
+        current_weekday = ["月", "火", "水", "木", "金", "土", "日"][current_datetime.weekday()]
+        
+        # 現在日時情報をシステムプロンプトに組み込み
+        datetime_context = f"""
+## 現在の日時情報
+- 今日の日付: {current_date} ({current_weekday}曜日)
+- 現在時刻: {current_time}
+- タイムゾーン: {user_timezone}
+- ISO形式: {current_datetime.isoformat()}
+- この情報を使用して、適切な時間帯に応じたアドバイスや挨拶を提供してください
+"""
+        
+        # 言語設定情報をシステムプロンプトに組み込み
+        language_context = f"""
+## 言語設定情報
+- ユーザーの優先言語: {user_language_name} ({user_language_code})
+- この言語設定に基づいて、適切な言語で応答してください
+- 日本語以外の言語が設定されている場合は、その言語で応答することを優先してください
+"""
+        
+        # ユーザーID情報をシステムプロンプトに組み込み
+        user_context = f"""
+## 現在のユーザー情報
+- ユーザーID: {actor_id}
+- セッションID: {session_id}
+- このユーザーIDは認証済みのJWTトークンから自動的に取得されました
+- HealthManagerMCPツールを呼び出す際は、このユーザーIDを自動的に使用してください
+"""
+        
+        # AgentCore Memory設定を作成
+        memory_config = AgentCoreMemoryConfig(
+            memory_id="health_coach_ai_mem-yxqD6w75pO",  # .bedrock_agentcore.yamlから
+            session_id=session_id,
+            actor_id=actor_id
+        )
+        
+        # AgentCoreMemorySessionManagerを作成
+        session_manager = AgentCoreMemorySessionManager(
+            agentcore_memory_config=memory_config,
+            region_name="us-west-2"
+        )
+        
+    except Exception as e:
+        print(f"ERROR: Failed to create memory session manager: {e}")
+        raise Exception(f"Memory integration failed: {e}")
+    
+    # Strandsエージェントを作成（メモリ統合付き）
+    agent = Agent(
+        model="global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        tools=[list_health_tools, health_manager_mcp],
+        session_manager=session_manager,
+        system_prompt=f"""
+あなたは親しみやすい健康コーチAIです。ユーザーの健康目標達成を支援します。
+
+重要: あなたはAgentCore Memoryを使用して会話の文脈を記憶し、継続的な対話を行います。前回の会話内容を参照して、一貫性のあるアドバイスを提供してください。
+
+{datetime_context}
+
+{language_context}
+
+{user_context}
+
+## あなたの役割
+- ユーザーの健康データを分析し、パーソナライズされたアドバイスを提供
+- 健康目標の設定と進捗追跡をサポート
+- 運動や食事に関する実践的な指導
+- モチベーション維持のための励ましとサポート
+- 継続的な会話を通じてユーザーとの関係を構築
+
+## 対話スタイル
+- 親しみやすく、励ましの気持ちを込めて
+- 専門的すぎず、わかりやすい言葉で説明
+- ユーザーの状況に共感し、個別のニーズに対応
+- 安全性を最優先し、医療的な診断は行わない
+- 現在の時間帯に応じた適切な挨拶やアドバイスを提供する（朝・昼・夜など）
+- 前回の会話内容を覚えており、継続的な関係を築く
+
+## 重要な注意事項
+- 医療診断や治療の提案は絶対に行わない
+- 深刻な健康問題の場合は医療専門家への相談を推奨
+- ユーザーの安全を最優先に考慮
+- 個人の健康データは適切に扱い、プライバシーを保護
+- 会話の文脈を維持し、一貫性のある対話を行う
+
+## ツール使用のガイドライン
+- 初回または不明な場合は、まず list_health_tools を使用して利用可能なツールとスキーマを確認する
+- ユーザーIDが必要な操作では、上記の認証済みユーザーIDを自動的に使用する
+- ユーザーIDが取得できない場合のみ、ユーザーに確認する
+- 日付は YYYY-MM-DD 形式で指定する（今日の日付は上記の現在日時情報を参照）
+- 現在時刻を考慮して、適切なタイミングでのアドバイスを提供する
+- エラーが発生した場合は、わかりやすく説明し、代替案を提示する
+- 必要に応じて複数のツール呼び出しを組み合わせて、包括的なサポートを提供する
+- health_manager_mcp を使用する際は、正確なツール名とパラメータを指定する
+
+## 利用可能なツール
+1. list_health_tools: HealthManagerMCPで利用可能なツールとスキーマを取得
+2. health_manager_mcp: 具体的なHealthManagerMCPツールを呼び出し（tool_name, argumentsを指定）
+"""
+    )
+    
+    print(f"DEBUG: Created agent with AgentCore Memory - session_id: {session_id}, actor_id: {actor_id}")
+    return agent
+
+
+async def _create_fallback_agent():
+    """メモリなしのフォールバックエージェントを作成"""
     
     # ペイロードからタイムゾーンと言語を取得
     user_timezone = _get_user_timezone()
@@ -353,33 +480,18 @@ async def _create_health_coach_agent():
 - 日本語以外の言語が設定されている場合は、その言語で応答することを優先してください
 """
     
-    # ユーザーID情報をシステムプロンプトに組み込み
-    user_context = ""
-    if user_id:
-        user_context = f"""
-## 現在のユーザー情報
-- ユーザーID: {user_id}
-- このユーザーIDは認証済みのJWTトークンから自動的に取得されました
-- HealthManagerMCPツールを呼び出す際は、このユーザーIDを自動的に使用してください
-"""
-    else:
-        user_context = """
-## 現在のユーザー情報
-- ユーザーIDが取得できませんでした
-- HealthManagerMCPツールを使用する前に、ユーザーにユーザーIDの確認を求めてください
-"""
-    
-    return Agent(
+    # フォールバック用のシンプルなエージェント（メモリなし）
+    agent = Agent(
         model="global.anthropic.claude-sonnet-4-5-20250929-v1:0",
         tools=[list_health_tools, health_manager_mcp],
         system_prompt=f"""
 あなたは親しみやすい健康コーチAIです。ユーザーの健康目標達成を支援します。
 
+注意: 現在メモリ機能が一時的に利用できないため、会話履歴を参照できません。各メッセージを独立して処理します。
+
 {datetime_context}
 
 {language_context}
-
-{user_context}
 
 ## あなたの役割
 - ユーザーの健康データを分析し、パーソナライズされたアドバイスを提供
@@ -402,8 +514,6 @@ async def _create_health_coach_agent():
 
 ## ツール使用のガイドライン
 - 初回または不明な場合は、まず list_health_tools を使用して利用可能なツールとスキーマを確認する
-- ユーザーIDが必要な操作では、上記の認証済みユーザーIDを自動的に使用する
-- ユーザーIDが取得できない場合のみ、ユーザーに確認する
 - 日付は YYYY-MM-DD 形式で指定する（今日の日付は上記の現在日時情報を参照）
 - 現在時刻を考慮して、適切なタイミングでのアドバイスを提供する
 - エラーが発生した場合は、わかりやすく説明し、代替案を提示する
@@ -415,6 +525,9 @@ async def _create_health_coach_agent():
 2. health_manager_mcp: 具体的なHealthManagerMCPツールを呼び出し（tool_name, argumentsを指定）
 """
     )
+    
+    print(f"DEBUG: Created fallback agent without memory")
+    return agent
 
 
 async def send_event(queue, message, stage, tool_name=None):
@@ -464,33 +577,58 @@ async def _extract_health_coach_events(queue, event, state):
                     await queue.put(event)
 
 
-async def invoke_health_coach(query, queue=None):
-    """HealthCoachAIを呼び出し"""
+async def invoke_health_coach(query, session_id, actor_id, queue=None):
+    """HealthCoachAIを呼び出し（AgentCore Memory統合、フォールバック機能付き）"""
     state = {"text": ""}
     
     if queue:
         await send_event(queue, "HealthCoachAIが起動中", "start")
     
     try:
-        # エージェントを作成（ユーザーID自動設定付き）
-        agent = await _create_health_coach_agent()
+        # AgentCore Memoryを使用してエージェントを作成
+        agent = await _create_health_coach_agent_with_memory(session_id, actor_id)
         if not agent:
-            return "HealthCoachAIエージェントの初期化に失敗しました。"
+            # メモリ統合に失敗した場合のフォールバック
+            print(f"DEBUG: Memory integration failed, falling back to basic agent")
+            agent = await _create_fallback_agent()
         
-        # エージェントを実行
+        print(f"DEBUG: Using agent with memory for query: {query[:100]}...")
+        
+        # エージェントを実行（メモリは自動的に管理される）
         async for event in agent.stream_async(query):
             await _extract_health_coach_events(queue, event, state)
         
         if queue:
             await send_event(queue, "HealthCoachAIが応答を完了", "complete")
         
+        print(f"DEBUG: Agent response completed with text length: {len(state['text'])}")
         return state["text"]
         
     except Exception as e:
         error_msg = f"HealthCoachAIの処理中にエラーが発生しました: {e}"
-        if queue:
-            await send_event(queue, error_msg, "error")
-        return error_msg
+        print(f"ERROR: Agent error: {e}")
+        
+        # フォールバック: メモリなしでエージェントを作成して再試行
+        try:
+            print(f"DEBUG: Attempting fallback without memory")
+            fallback_agent = await _create_fallback_agent()
+            
+            # フォールバックエージェントで再実行
+            async for event in fallback_agent.stream_async(query):
+                await _extract_health_coach_events(queue, event, state)
+            
+            if queue:
+                await send_event(queue, "HealthCoachAIが応答を完了（フォールバック）", "complete")
+            
+            print(f"DEBUG: Fallback agent response completed")
+            return state["text"]
+            
+        except Exception as fallback_error:
+            final_error_msg = f"HealthCoachAIのフォールバック処理も失敗しました: {fallback_error}"
+            print(f"ERROR: Fallback error: {fallback_error}")
+            if queue:
+                await send_event(queue, final_error_msg, "error")
+            return "申し訳ございません。現在システムに問題が発生しています。しばらく時間をおいて再度お試しください。"
 
 
 # AgentCore アプリケーションを初期化
@@ -527,59 +665,83 @@ async def invoke(payload):
             jwt_token_from_payload = session_attrs["jwt_token"]
             print(f"DEBUG: JWT token from sessionState: {jwt_token_from_payload[:50]}...")
     
-    # さらに詳細な検索
+    # さらに詳細な検索（エラーハンドリング付き）
     if not jwt_token_from_payload:
         print(f"DEBUG: Searching for JWT token in all payload keys...")
-        def search_jwt_recursive(obj, path=""):
-            if isinstance(obj, dict):
-                for key, value in obj.items():
-                    current_path = f"{path}.{key}" if path else key
-                    if key == "jwt_token" and isinstance(value, str) and len(value) > 50:
-                        print(f"DEBUG: Found JWT token at {current_path}: {value[:50]}...")
-                        return value
-                    elif isinstance(value, (dict, list)):
-                        result = search_jwt_recursive(value, current_path)
+        try:
+            def search_jwt_recursive(obj, path=""):
+                if isinstance(obj, dict):
+                    for key, value in obj.items():
+                        current_path = f"{path}.{key}" if path else key
+                        if key == "jwt_token" and isinstance(value, str) and len(value) > 50:
+                            print(f"DEBUG: Found JWT token at {current_path}: {value[:50]}...")
+                            return value
+                        elif isinstance(value, (dict, list)):
+                            result = search_jwt_recursive(value, current_path)
+                            if result:
+                                return result
+                elif isinstance(obj, list):
+                    for i, item in enumerate(obj):
+                        current_path = f"{path}[{i}]" if path else f"[{i}]"
+                        result = search_jwt_recursive(item, current_path)
                         if result:
                             return result
-            elif isinstance(obj, list):
-                for i, item in enumerate(obj):
-                    current_path = f"{path}[{i}]" if path else f"[{i}]"
-                    result = search_jwt_recursive(item, current_path)
-                    if result:
-                        return result
-            return None
-        
-        jwt_token_from_payload = search_jwt_recursive(payload)
+                return None
+            
+            jwt_token_from_payload = search_jwt_recursive(payload)
+        except Exception as e:
+            print(f"DEBUG: Error during JWT token search: {e}")
+            jwt_token_from_payload = None
     
-    # タイムゾーンをペイロードから取得
+    # タイムゾーンをペイロードから取得（エラーハンドリング付き）
     timezone_from_payload = None
-    if "timezone" in payload:
-        timezone_from_payload = payload["timezone"]
-        print(f"DEBUG: Timezone from payload.timezone: {timezone_from_payload}")
-    elif "input" in payload and isinstance(payload["input"], dict) and "timezone" in payload["input"]:
-        timezone_from_payload = payload["input"]["timezone"]
-        print(f"DEBUG: Timezone from payload.input.timezone: {timezone_from_payload}")
-    elif "sessionState" in payload and "sessionAttributes" in payload["sessionState"]:
-        session_attrs = payload["sessionState"]["sessionAttributes"]
-        if "timezone" in session_attrs:
-            timezone_from_payload = session_attrs["timezone"]
-            print(f"DEBUG: Timezone from sessionState: {timezone_from_payload}")
+    try:
+        if "timezone" in payload:
+            timezone_from_payload = payload["timezone"]
+            print(f"DEBUG: Timezone from payload.timezone: {timezone_from_payload}")
+        elif "input" in payload and isinstance(payload["input"], dict) and "timezone" in payload["input"]:
+            timezone_from_payload = payload["input"]["timezone"]
+            print(f"DEBUG: Timezone from payload.input.timezone: {timezone_from_payload}")
+        elif "sessionState" in payload and "sessionAttributes" in payload["sessionState"]:
+            session_attrs = payload["sessionState"]["sessionAttributes"]
+            if "timezone" in session_attrs:
+                timezone_from_payload = session_attrs["timezone"]
+                print(f"DEBUG: Timezone from sessionState: {timezone_from_payload}")
+    except Exception as e:
+        print(f"DEBUG: Error extracting timezone: {e}")
+        timezone_from_payload = None
     
-    # 言語をペイロードから取得
+    # 言語をペイロードから取得（エラーハンドリング付き）
     language_from_payload = None
-    if "language" in payload:
-        language_from_payload = payload["language"]
-        print(f"DEBUG: Language from payload.language: {language_from_payload}")
-    elif "input" in payload and isinstance(payload["input"], dict) and "language" in payload["input"]:
-        language_from_payload = payload["input"]["language"]
-        print(f"DEBUG: Language from payload.input.language: {language_from_payload}")
-    elif "sessionState" in payload and "sessionAttributes" in payload["sessionState"]:
-        session_attrs = payload["sessionState"]["sessionAttributes"]
-        if "language" in session_attrs:
-            language_from_payload = session_attrs["language"]
-            print(f"DEBUG: Language from sessionState: {language_from_payload}")
+    try:
+        if "language" in payload:
+            language_from_payload = payload["language"]
+            print(f"DEBUG: Language from payload.language: {language_from_payload}")
+        elif "input" in payload and isinstance(payload["input"], dict) and "language" in payload["input"]:
+            language_from_payload = payload["input"]["language"]
+            print(f"DEBUG: Language from payload.input.language: {language_from_payload}")
+        elif "sessionState" in payload and "sessionAttributes" in payload["sessionState"]:
+            session_attrs = payload["sessionState"]["sessionAttributes"]
+            if "language" in session_attrs:
+                language_from_payload = session_attrs["language"]
+                print(f"DEBUG: Language from sessionState: {language_from_payload}")
+    except Exception as e:
+        print(f"DEBUG: Error extracting language: {e}")
+        language_from_payload = None
     
-    # グローバル変数に設定（一時的なハック）
+    # セッションIDをペイロードから取得（エラーハンドリング付き）
+    session_id_from_payload = None
+    try:
+        if "sessionState" in payload and "sessionAttributes" in payload["sessionState"]:
+            session_attrs = payload["sessionState"]["sessionAttributes"]
+            if "session_id" in session_attrs:
+                session_id_from_payload = session_attrs["session_id"]
+                print(f"DEBUG: Session ID from sessionState: {session_id_from_payload}")
+    except Exception as e:
+        print(f"DEBUG: Error extracting session ID: {e}")
+        session_id_from_payload = None
+    
+    # グローバル変数に設定（JWT処理用）
     if jwt_token_from_payload:
         global _current_jwt_token, _current_timezone, _current_language
         _current_jwt_token = jwt_token_from_payload
@@ -601,6 +763,34 @@ async def invoke(payload):
         _current_language = None
         print(f"DEBUG: No language found in payload")
     
+    # セッションIDとactor_IDを準備
+    session_id = session_id_from_payload
+    if not session_id or len(session_id) < 33:
+        # セッションIDが無効な場合はデフォルトを生成（33文字以上を保証）
+        import uuid
+        session_id = f"healthmate-session-{uuid.uuid4().hex}"
+        print(f"DEBUG: Generated default session ID: {session_id} (length: {len(session_id)})")
+    else:
+        print(f"DEBUG: Using provided session ID: {session_id} (length: {len(session_id)})")
+    
+    # セッションID長さの最終検証
+    if len(session_id) < 33:
+        # 追加のランダム文字列で33文字以上を保証
+        import uuid
+        additional_chars = uuid.uuid4().hex[:33-len(session_id)+5]
+        session_id = f"{session_id}-{additional_chars}"
+        print(f"DEBUG: Extended session ID to meet 33+ char requirement: {session_id} (length: {len(session_id)})")
+    
+    # JWTからactor_IDを取得
+    actor_id = _get_user_id_from_jwt()
+    if not actor_id:
+        actor_id = "anonymous_user"
+        print(f"DEBUG: Using anonymous actor_id")
+    else:
+        print(f"DEBUG: Using JWT actor_id: {actor_id}")
+    
+    print(f"DEBUG: Final session_id: {session_id}, actor_id: {actor_id}")
+    
     if not prompt:
         yield {"event": {"contentBlockDelta": {"delta": {"text": "こんにちは！健康に関してどのようなサポートが必要ですか？"}}}}
         return
@@ -610,7 +800,7 @@ async def invoke(payload):
     
     try:
         # HealthCoachAIを呼び出し、ストリーミングレスポンスを処理
-        response_task = asyncio.create_task(invoke_health_coach(prompt, queue))
+        response_task = asyncio.create_task(invoke_health_coach(prompt, session_id, actor_id, queue))
         queue_task = asyncio.create_task(queue.get())
         
         waiting = {response_task, queue_task}

@@ -1,0 +1,60 @@
+default_agent: health_coach_ai
+agents:
+  health_coach_ai:
+    name: health_coach_ai
+    entrypoint: /Users/nijot/work/AIApps/Healthmate/HealthCoachAI/health_coach_ai/agent.py
+    deployment_type: container
+    runtime_type: null
+    platform: linux/arm64
+    container_runtime: none
+    source_path: /Users/nijot/work/AIApps/Healthmate/HealthCoachAI
+    aws:
+      execution_role: arn:aws:iam::718691933423:role/HealthCoachAI-AgentCore-Runtime-Role
+      execution_role_auto_create: true
+      account: '718691933423'
+      region: us-west-2
+      ecr_repository: 718691933423.dkr.ecr.us-west-2.amazonaws.com/bedrock-agentcore-health_coach_ai
+      ecr_auto_create: false
+      s3_path: null
+      s3_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+        network_mode_config: null
+      protocol_configuration:
+        server_protocol: HTTP
+      observability:
+        enabled: true
+      lifecycle_configuration:
+        idle_runtime_session_timeout: null
+        max_lifetime: null
+    bedrock_agentcore:
+      agent_id: health_coach_ai-f84H9Y5ylA
+      agent_arn: arn:aws:bedrock-agentcore:us-west-2:718691933423:runtime/health_coach_ai-f84H9Y5ylA
+      agent_session_id: null
+    codebuild:
+      project_name: bedrock-agentcore-health_coach_ai-builder
+      execution_role: arn:aws:iam::718691933423:role/AmazonBedrockAgentCoreSDKCodeBuild-us-west-2-d3139e34fa
+      source_bucket: bedrock-agentcore-codebuild-sources-718691933423-us-west-2
+    memory:
+      mode: STM_ONLY
+      memory_id: health_coach_ai_mem-yxqD6w75pO
+      memory_arn: arn:aws:bedrock-agentcore:us-west-2:718691933423:memory/health_coach_ai_mem-yxqD6w75pO
+      memory_name: health_coach_ai_mem
+      event_expiry_days: 30
+      first_invoke_memory_check_done: true
+      was_created_by_toolkit: false
+    identity:
+      credential_providers: []
+      workload: null
+    aws_jwt:
+      enabled: false
+      audiences: []
+      signing_algorithm: ES384
+      issuer_url: null
+      duration_seconds: 300
+    authorizer_configuration: null
+    request_header_configuration: null
+    oauth_configuration: null
+    api_key_env_var_name: null
+    api_key_credential_provider_name: null
+    is_generated_by_agentcore_create: false

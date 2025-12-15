@@ -13,6 +13,12 @@ HealthCoachAIは、ユーザーの健康目標達成を支援するAIエージ�
 
 ## 主な機能
 
+### 🧠 AgentCore Memory統合
+- **セッション継続性**: 会話の文脈を記憶し、継続的な対話を実現
+- **AgentCoreMemorySessionManager**: 自動的なセッション管理
+- **フォールバック機能**: メモリ統合失敗時の安全な動作保証
+- **セッションID管理**: 33文字以上の要件に対応した自動生成
+
 ### 🔐 自動認証
 - JWTトークンからユーザーIDを自動抽出
 - Cognito認証との統合
@@ -135,16 +141,25 @@ python run_agent.py
 
 ### 手動テスト
 
+#### ローカル開発テスト
 ```bash
 # インタラクティブテストプログラム
 python manual_test_agent.py
 ```
 
+#### デプロイ済みエージェントテスト
+```bash
+# デプロイ済みエージェントの手動テスト
+python manual_test_deployed_agent.py
+```
+
 機能：
-- マルチライン入力対応
-- セッション維持
-- リアルタイムJWT認証
-- DynamoDB確認用ユーザーID表示
+- **セッション継続性テスト**: AgentCore Memoryの動作確認
+- **マルチライン入力対応**: 複雑なクエリの入力
+- **セッション維持**: 会話の文脈を保持
+- **リアルタイムJWT認証**: 自動認証とユーザー識別
+- **DynamoDB確認用ユーザーID表示**: データベース確認支援
+- **ストリーミング対応**: リアルタイム応答表示
 
 ### 自動テスト
 
@@ -158,6 +173,21 @@ python test_health_coach_agent.py
 # MCPスキーマ発見テスト
 python test_mcp_schema_discovery.py
 ```
+
+### セッション継続性テスト
+
+AgentCore Memory統合の動作確認：
+
+```bash
+# デプロイ済みエージェントでセッション継続性をテスト
+python manual_test_deployed_agent.py
+# コマンド: memory_test
+```
+
+テスト内容：
+1. **名前の記憶**: 「私の名前はジョニーです」→「私の名前は何ですか？」
+2. **会話の文脈継続**: 健康目標設定→進捗確認方法の質問
+3. **セッションID管理**: 同一セッションでの会話継続性確認
 
 ## アーキテクチャ
 
@@ -188,13 +218,19 @@ python test_mcp_schema_discovery.py
 health_coach_ai/
 ├── health_coach_ai/
 │   ├── __init__.py
-│   └── agent.py                    # メインエージェント実装
-├── manual_test_agent.py           # インタラクティブテストプログラム
+│   └── agent.py                    # メインエージェント実装（AgentCore Memory統合）
+├── manual_test_agent.py           # ローカル開発テストプログラム
+├── manual_test_deployed_agent.py  # デプロイ済みエージェントテストプログラム
 ├── test_config_helper.py          # テスト用設定ヘルパー
 ├── test_health_coach_agent.py     # 包括的統合テスト
 ├── test_health_coach_agent_simple.py  # 基本機能テスト
 ├── test_mcp_schema_discovery.py   # MCPスキーマ発見テスト
 ├── run_agent.py                   # エージェント実行スクリプト
+├── deploy_to_aws.sh               # AWSデプロイスクリプト
+├── destroy_from_aws.sh            # AWSアンデプロイスクリプト
+├── create_custom_iam_role.py      # カスタムIAMロール作成
+├── check_deployment_status.py     # デプロイ状態確認
+├── .bedrock_agentcore.yaml        # AgentCore設定ファイル
 ├── requirements.txt               # 依存関係
 ├── README.md                      # このファイル
 └── .gitignore                     # Git除外設定
@@ -271,6 +307,42 @@ python manual_test_deployed_agent.py
    - JWTトークンがエージェントに自動的に渡される
    - エージェントがユーザーIDを自動抽出して動作
 
+## 🧠 AgentCore Memory統合
+
+### セッション継続性
+
+HealthCoachAIは**AgentCore Memory**を統合し、会話の文脈を記憶します：
+
+- **自動セッション管理**: `AgentCoreMemorySessionManager`による透明なセッション処理
+- **会話の継続性**: 前回の会話内容を参照した一貫性のあるアドバイス
+- **フォールバック機能**: メモリ統合失敗時も安全に動作
+- **セッションID要件**: 33文字以上のセッションIDを自動生成・管理
+
+### メモリ設定
+
+```yaml
+# .bedrock_agentcore.yaml
+agents:
+  health_coach_ai:
+    bedrock_agentcore:
+      memory:
+        memory_id: "health_coach_ai_mem-yxqD6w75pO"
+        enabled: true
+```
+
+### セッション継続性テスト
+
+```bash
+# デプロイ済みエージェントでテスト
+python manual_test_deployed_agent.py
+# コマンド: memory_test
+
+# 期待される動作:
+# 1. 「私の名前はジョニーです」
+# 2. 「私の名前は何ですか？」→ "ジョニー"と回答
+# 3. 健康目標設定 → 前の目標を参照した進捗確認
+```
+
 ## 🗑️ アンデプロイ（削除）
 
 HealthCoachAIエージェントをAWSから完全に削除する場合：
@@ -293,7 +365,7 @@ HealthCoachAIエージェントをAWSから完全に削除する場合：
    - CodeBuildプロジェクト
    - IAMロール
    - S3アーティファクト
-5. **メモリリソース削除**: AgentCore Memory
+5. **AgentCore Memoryリソース削除**: セッション管理メモリ
 6. **ローカルクリーンアップ**: 設定ファイルとキャッシュの削除
 
 ### 手動アンデプロイ
@@ -307,9 +379,9 @@ source venv/bin/activate
 # 2. AgentCoreリソースを削除
 agentcore destroy --delete-ecr-repo
 
-# 3. メモリリソースを削除
+# 3. AgentCore Memoryリソースを削除
 AWS_DEFAULT_REGION=us-west-2 agentcore memory list
-AWS_DEFAULT_REGION=us-west-2 agentcore memory delete <memory-id>
+AWS_DEFAULT_REGION=us-west-2 agentcore memory delete health_coach_ai_mem-yxqD6w75pO
 
 # 4. ローカル設定ファイルを削除
 rm -f .bedrock_agentcore.yaml
@@ -319,9 +391,10 @@ rm -rf .bedrock_agentcore
 ### アンデプロイ後の状態
 
 - ✅ 全てのAWSリソースが削除される
+- ✅ AgentCore Memoryリソースが削除される
 - ✅ AWSコストが発生しなくなる
 - ✅ ローカル設定ファイルがクリーンアップされる
-- 🔄 `./deploy_to_aws.sh` で再デプロイ可能
+- 🔄 `./deploy_to_aws.sh` で再デプロイ可能（メモリ統合含む）
 
 ### デプロイ要件
 
