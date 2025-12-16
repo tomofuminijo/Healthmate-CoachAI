@@ -1,12 +1,12 @@
-# HealthCoachAI セットアップガイド
+# Healthmate-CoachAI セットアップガイド
 
 ## 🚀 クイックスタート（推奨方法）
 
 ### 1. リポジトリのクローンと環境準備
 
 ```bash
-git clone https://github.com/tomofuminijo/HealthCoachAI.git
-cd HealthCoachAI
+git clone https://github.com/tomofuminijo/Healthmate-CoachAI.git
+cd Healthmate-CoachAI
 python3 -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -57,7 +57,7 @@ python3 create_custom_iam_role.py
 ```
 
 作成されるIAMロール：
-- **ロール名**: `HealthCoachAI-AgentCore-Runtime-Role`
+- **ロール名**: `Healthmate-CoachAI-AgentCore-Runtime-Role`
 - **権限**: AgentCore Runtime基本権限 + CloudFormation読み取り + Cognito読み取り
 
 ### 環境変数設定（オプション）
@@ -119,7 +119,7 @@ python manual_test_agent.py
 ## アーキテクチャ概要
 
 ```
-フロントエンドUI → HealthCoachAIエージェント → MCPゲートウェイ → バックエンドサービス
+フロントエンドUI → Healthmate-CoachAIエージェント → MCPゲートウェイ → バックエンドサービス
      ↓                    ↓                        ↓                ↓
 JWT認証          JWT デコード/検証            OAuth認証        健康データ
 ```
