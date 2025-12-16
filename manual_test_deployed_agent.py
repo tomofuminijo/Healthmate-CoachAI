@@ -93,10 +93,10 @@ class DeployedAgentTestSession:
             with open(config_file, 'r', encoding='utf-8') as f:
                 agentcore_config = yaml.safe_load(f)
             
-            # health_coach_ai エージェントのARNを取得
+            # healthmate_coach_ai エージェントのARNを取得
             agents = agentcore_config.get('agents', {})
-            health_coach_ai = agents.get('health_coach_ai', {})
-            bedrock_agentcore = health_coach_ai.get('bedrock_agentcore', {})
+            healthmate_coach_ai = agents.get('healthmate_coach_ai', {})
+            bedrock_agentcore = healthmate_coach_ai.get('bedrock_agentcore', {})
             agent_arn = bedrock_agentcore.get('agent_arn')
             
             if not agent_arn:
@@ -120,7 +120,7 @@ class DeployedAgentTestSession:
                 return False
             
             # Agent Runtime ARNが取得できれば、エージェントは利用可能と判断
-            print("   ✅ health_coach_ai エージェントのRuntime ARNが確認できました")
+            print("   ✅ healthmate_coach_ai エージェントのRuntime ARNが確認できました")
             return True
             
         except Exception as e:
@@ -567,7 +567,7 @@ async def main():
     
     if not agent_status_success:
         print("❌ エージェント状態の確認に失敗しました。")
-        print("   health_coach_ai エージェントがAWSにデプロイされていることを確認してください。")
+        print("   healthmate_coach_ai エージェントがAWSにデプロイされていることを確認してください。")
         return
     
     # 初回認証

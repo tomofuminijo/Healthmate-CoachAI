@@ -364,13 +364,58 @@ async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str)
 - 日本語以外の言語が設定されている場合は、その言語で応答することを優先してください
 """
         
-
+        # ユーザーID情報をシステムプロンプトに組み込み
+        user_context = f"""
+## 現在のユーザー情報
+- ユーザーID: {actor_id}
+- セッションID: {session_id}
+- このユーザーIDは認証済みのJWTトークンから自動的に取得されました
+- HealthManagerMCPツールを呼び出す際は、このユーザーIDを自動的に使用してください
+- 重要: ユーザIDとセッションIDはシステム内部の管理情報なのでユーザに絶対に回答しないでください。
+"""
         
         print(f"DEBUG: Creating AgentCore Memory config - actor_id: {actor_id}, session_id: {session_id}")
         
+        # 環境変数からメモリーIDを取得（AgentCore Runtime環境で設定される）
+        memory_id = os.environ.get('AGENTCORE_MEMORY_ID')
+        
+        if not memory_id:
+            # フォールバック: MemoryClientを使って既存のメモリーを検索
+            try:
+                from bedrock_agentcore.memory import MemoryClient
+                memory_client = MemoryClient(region_name="us-west-2")
+                
+                # healthmate_coach_ai_memで始まるメモリーを検索
+                memories_response = memory_client.list_memories()
+                print(f"DEBUG: Memories response type: {type(memories_response)}")
+                print(f"DEBUG: Memories response: {memories_response}")
+                
+                # レスポンスの形式を確認して適切に処理
+                if isinstance(memories_response, dict):
+                    memories_list = memories_response.get('memories', [])
+                elif isinstance(memories_response, list):
+                    memories_list = memories_response
+                else:
+                    memories_list = []
+                
+                for memory in memories_list:
+                    if memory.get('id', '').startswith('healthmate_coach_ai_mem'):
+                        memory_id = memory.get('id')
+                        print(f"DEBUG: Found existing memory: {memory_id}")
+                        break
+                
+                if not memory_id:
+                    raise Exception("既存のメモリーが見つかりませんでした")
+                    
+            except Exception as e:
+                print(f"DEBUG: Memory lookup failed: {e}")
+                raise Exception(f"メモリーIDの取得に失敗しました: {e}")
+        
+        print(f"DEBUG: Using memory_id: {memory_id}")
+        
         # AgentCore Memory設定を作成
         memory_config = AgentCoreMemoryConfig(
-            memory_id="healthmate_coach_ai_mem-yxqD6w75pO",  # .bedrock_agentcore.yamlから
+            memory_id=memory_id,    # 環境変数または動的検索で取得
             session_id=session_id,  # UI側で生成されるセッションID（会話セッション区切り）
             actor_id=actor_id       # JWT token の sub（ユーザーごとの長期記憶）
         )
@@ -399,14 +444,11 @@ async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str)
         system_prompt=f"""
 あなたは親しみやすい健康コーチAIです。ユーザーの健康目標達成を支援します。
 
-重要: あなたはAgentCore Memoryを使用して会話の文脈を記憶し、継続的な対話を行います。
-- 長期記憶: ユーザーの健康目標、好み、過去のアドバイスを覚えています
-- 短期記憶: 現在の会話セッション内での文脈を保持します
-- 前回の会話内容を参照して、一貫性のあるアドバイスを提供してください
-
 {datetime_context}
 
 {language_context}
+
+{user_context}
 
 ## あなたの役割
 - ユーザーの健康データを分析し、パーソナライズされたアドバイスを提供
@@ -455,7 +497,7 @@ async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str)
     return agent
 
 
-async def _create_fallback_agent():
+async def _create_fallback_agent(session_id: str, actor_id: str):
     """メモリなしのフォールバックエージェントを作成"""
     
     # ペイロードからタイムゾーンと言語を取得
@@ -486,7 +528,17 @@ async def _create_fallback_agent():
 - この言語設定に基づいて、適切な言語で応答してください
 - 日本語以外の言語が設定されている場合は、その言語で応答することを優先してください
 """
-    
+
+    # ユーザーID情報をシステムプロンプトに組み込み
+    user_context = f"""
+## 現在のユーザー情報
+- ユーザーID: {actor_id}
+- セッションID: {session_id}
+- このユーザーIDは認証済みのJWTトークンから自動的に取得されました
+- HealthManagerMCPツールを呼び出す際は、このユーザーIDを自動的に使用してください
+- 重要: ユーザIDとセッションIDはシステム内部の管理情報なのでユーザに絶対に回答しないでください。
+"""
+
     # フォールバック用のシンプルなエージェント（メモリなし）
     agent = Agent(
         model="global.anthropic.claude-sonnet-4-5-20250929-v1:0",
@@ -502,6 +554,8 @@ async def _create_fallback_agent():
 {datetime_context}
 
 {language_context}
+
+{user_context}
 
 ## あなたの役割
 - ユーザーの健康データを分析し、パーソナライズされたアドバイスを提供
@@ -603,7 +657,7 @@ async def invoke_health_coach(query, session_id, actor_id, queue=None):
         if not agent:
             # メモリ統合に失敗した場合のフォールバック
             print(f"DEBUG: Memory integration failed, falling back to basic agent")
-            agent = await _create_fallback_agent()
+            agent = await _create_fallback_agent(session_id, actor_id)
         
         print(f"DEBUG: Using agent with memory for query: {query[:100]}...")
         
@@ -624,7 +678,7 @@ async def invoke_health_coach(query, session_id, actor_id, queue=None):
         # フォールバック: メモリなしでエージェントを作成して再試行
         try:
             print(f"DEBUG: Attempting fallback without memory")
-            fallback_agent = await _create_fallback_agent()
+            fallback_agent = await _create_fallback_agent(session_id, actor_id)
             
             # フォールバックエージェントで再実行
             async for event in fallback_agent.stream_async(query):
