@@ -104,8 +104,8 @@ def _get_jwt_token():
         return None
 
 
-def _get_user_id_from_jwt():
-    """JWTトークンからユーザーIDを取得（エラーハンドリング強化版）"""
+def _get_sub_from_jwt():
+    """JWTトークンからsubを取得（エラーハンドリング強化版）"""
     try:
         jwt_token = _get_jwt_token()
         if not jwt_token:
@@ -117,20 +117,18 @@ def _get_user_id_from_jwt():
             print(f"DEBUG: Failed to decode JWT payload")
             return None
             
-        user_id = payload.get('sub')  # Cognitoの場合、subフィールドにユーザーIDが含まれる
+        sub = payload.get('sub') 
         
-        if not user_id:
+        if not sub:
             print(f"DEBUG: No 'sub' field found in JWT payload")
-            # フォールバック: 他のフィールドを試す
-            user_id = payload.get('username') or payload.get('email') or payload.get('user_id')
-            if user_id:
-                print(f"DEBUG: Using fallback user ID: {user_id}")
-        
-        print(f"DEBUG: Extracted user ID from JWT: {user_id}")
-        return user_id
+            # 例外を投げる
+            raise ValueError("JWT payload missing 'sub' field")
+
+        print(f"DEBUG: Extracted sub from JWT: {sub}")
+        return sub
         
     except Exception as e:
-        print(f"ERROR: ユーザーID取得エラー: {e}")
+        print(f"ERROR: sub 取得エラー: {e}")
         return None
 
 
@@ -813,9 +811,9 @@ async def invoke(payload):
     session_id = session_id_from_payload
     
     # Extract actor ID from JWT
-    actor_id = _get_user_id_from_jwt()
+    actor_id = _get_sub_from_jwt()
     if not actor_id:
-        error_msg = "JWT トークンからユーザーIDを抽出できませんでした。有効な認証トークンが必要です。"
+        error_msg = "JWT トークンから sub を抽出できませんでした。有効な認証トークンが必要です。"
         print(f"ERROR: {error_msg}")
         yield {
             "event": {
