@@ -7,8 +7,8 @@
 ```bash
 git clone https://github.com/tomofuminijo/Healthmate-CoachAI.git
 cd Healthmate-CoachAI
-python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 

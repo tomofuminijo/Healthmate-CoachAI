@@ -58,8 +58,8 @@ git clone https://github.com/tomofuminijo/Healthmate-CoachAI.git
 cd Healthmate-CoachAI
 
 # 2. 仮想環境を作成・アクティベート
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 
 # 3. 依存関係をインストール
 pip install -r requirements.txt
@@ -120,8 +120,8 @@ git clone <repository-url>
 cd healthmate-coach-ai
 
 # 仮想環境の作成
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
 # 依存関係のインストール
 pip install -r requirements.txt
@@ -374,7 +374,7 @@ Healthmate-CoachAIエージェントをAWSから完全に削除する場合：
 
 ```bash
 # 1. 仮想環境をアクティベート
-source venv/bin/activate
+source .venv/bin/activate
 
 # 2. AgentCoreリソースを削除
 agentcore destroy --delete-ecr-repo
