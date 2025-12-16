@@ -330,7 +330,7 @@ async def health_manager_mcp(tool_name: str, arguments: dict) -> str:
 
 
 async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str):
-    """AgentCoreMemorySessionManagerを使用してHealthmate-CoachAIエージェントを作成（エラーハンドリング付き）"""
+    """AgentCoreMemorySessionManagerを使用してHealthmate-CoachAIエージェントを作成（AgentCore Memory必須）"""
     
     try:
         # ペイロードからタイムゾーンと言語を取得
@@ -432,7 +432,7 @@ async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str)
         print(f"ERROR: Failed to create memory session manager: {e}")
         import traceback
         print(f"ERROR: Memory integration traceback: {traceback.format_exc()}")
-        raise Exception(f"Memory integration failed: {e}")
+        raise Exception(f"AgentCore Memory統合に失敗しました: {e}")
     
     # Strandsエージェントを作成（メモリ統合付き）
     agent = Agent(
@@ -499,104 +499,7 @@ async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str)
     return agent
 
 
-async def _create_fallback_agent(session_id: str, actor_id: str):
-    """メモリなしのフォールバックエージェントを作成"""
-    
-    # ペイロードからタイムゾーンと言語を取得
-    user_timezone = _get_user_timezone()
-    user_language_code = _get_user_language()
-    user_language_name = _get_language_name(user_language_code)
-    
-    # ユーザーのタイムゾーンに合わせた現在日時を取得
-    current_datetime = _get_localized_datetime(user_timezone)
-    current_date = current_datetime.strftime("%Y年%m月%d日")
-    current_time = current_datetime.strftime("%H時%M分")
-    current_weekday = ["月", "火", "水", "木", "金", "土", "日"][current_datetime.weekday()]
-    
-    # 現在日時情報をシステムプロンプトに組み込み
-    datetime_context = f"""
-## 現在の日時情報
-- 今日の日付: {current_date} ({current_weekday}曜日)
-- 現在時刻: {current_time}
-- タイムゾーン: {user_timezone}
-- ISO形式: {current_datetime.isoformat()}
-- この情報を使用して、適切な時間帯に応じたアドバイスや挨拶を提供してください
-"""
-    
-    # 言語設定情報をシステムプロンプトに組み込み
-    language_context = f"""
-## 言語設定情報
-- ユーザーの優先言語: {user_language_name} ({user_language_code})
-- この言語設定に基づいて、適切な言語で応答してください
-- 日本語以外の言語が設定されている場合は、その言語で応答することを優先してください
-"""
 
-    # ユーザーID情報をシステムプロンプトに組み込み
-    user_context = f"""
-## 現在のユーザー情報
-- ユーザーID: {actor_id}
-- セッションID: {session_id}
-- このユーザーIDは認証済みのJWTトークンから自動的に取得されました
-- HealthManagerMCPツールを呼び出す際は、このユーザーIDを自動的に使用してください
-- 重要: ユーザIDとセッションIDはシステム内部の管理情報なのでユーザに絶対に回答しないでください。
-"""
-
-    # フォールバック用のシンプルなエージェント（メモリなし）
-    agent = Agent(
-        model="global.anthropic.claude-sonnet-4-5-20250929-v1:0",
-        tools=[list_health_tools, health_manager_mcp],
-        system_prompt=f"""
-あなたは親しみやすい健康コーチAIです。ユーザーの健康目標達成を支援します。
-
-重要: 現在AgentCore Memoryが一時的に利用できないため、フォールバックモードで動作しています。
-- 会話履歴を参照できません（各メッセージを独立して処理）
-- 長期記憶機能が無効になっています
-- 可能な限り現在のメッセージ内の情報を活用してサポートします
-
-{datetime_context}
-
-{language_context}
-
-{user_context}
-
-## あなたの役割
-- ユーザーの健康データを分析し、パーソナライズされたアドバイスを提供
-- 健康目標の設定と進捗追跡をサポート
-- 運動や食事に関する実践的な指導
-- モチベーション維持のための励ましとサポート
-- 現在のメッセージ内の情報を最大限活用したサポート
-
-## 対話スタイル
-- 親しみやすく、励ましの気持ちを込めて
-- 専門的すぎず、わかりやすい言葉で説明
-- ユーザーの状況に共感し、個別のニーズに対応
-- 安全性を最優先し、医療的な診断は行わない
-- 現在の時間帯に応じた適切な挨拶やアドバイスを提供する（朝・昼・夜など）
-- メモリ機能が利用できない旨を必要に応じて説明
-
-## 重要な注意事項
-- 医療診断や治療の提案は絶対に行わない
-- 深刻な健康問題の場合は医療専門家への相談を推奨
-- ユーザーの安全を最優先に考慮
-- 個人の健康データは適切に扱い、プライバシーを保護
-- フォールバックモードであることを適切に伝える
-
-## ツール使用のガイドライン
-- 初回または不明な場合は、まず list_health_tools を使用して利用可能なツールとスキーマを確認する
-- 日付は YYYY-MM-DD 形式で指定する（今日の日付は上記の現在日時情報を参照）
-- 現在時刻を考慮して、適切なタイミングでのアドバイスを提供する
-- エラーが発生した場合は、わかりやすく説明し、代替案を提示する
-- 必要に応じて複数のツール呼び出しを組み合わせて、包括的なサポートを提供する
-- health_manager_mcp を使用する際は、正確なツール名とパラメータを指定する
-
-## 利用可能なツール
-1. list_health_tools: HealthManagerMCPで利用可能なツールとスキーマを取得
-2. health_manager_mcp: 具体的なHealthManagerMCPツールを呼び出し（tool_name, argumentsを指定）
-"""
-    )
-    
-    print(f"DEBUG: Created fallback agent without memory (フォールバックモード)")
-    return agent
 
 
 async def send_event(queue, message, stage, tool_name=None):
@@ -647,21 +550,17 @@ async def _extract_health_coach_events(queue, event, state):
 
 
 async def invoke_health_coach(query, session_id, actor_id, queue=None):
-    """Healthmate-CoachAIを呼び出し（AgentCore Memory統合、フォールバック機能付き）"""
+    """Healthmate-CoachAIを呼び出し（AgentCore Memory統合必須）"""
     state = {"text": ""}
     
     if queue:
         await send_event(queue, "Healthmate-CoachAIが起動中", "start")
     
     try:
-        # AgentCore Memoryを使用してエージェントを作成
+        # AgentCore Memoryを使用してエージェントを作成（必須）
         agent = await _create_health_coach_agent_with_memory(session_id, actor_id)
-        if not agent:
-            # メモリ統合に失敗した場合のフォールバック
-            print(f"DEBUG: Memory integration failed, falling back to basic agent")
-            agent = await _create_fallback_agent(session_id, actor_id)
         
-        print(f"DEBUG: Using agent with memory for query: {query[:100]}...")
+        print(f"DEBUG: Using agent with AgentCore Memory for query: {query[:100]}...")
         
         # エージェントを実行（メモリは自動的に管理される）
         async for event in agent.stream_async(query):
@@ -674,30 +573,14 @@ async def invoke_health_coach(query, session_id, actor_id, queue=None):
         return state["text"]
         
     except Exception as e:
-        error_msg = f"Healthmate-CoachAIの処理中にエラーが発生しました: {e}"
-        print(f"ERROR: Agent error: {e}")
+        error_msg = f"AgentCore Memory統合エラー: {e}"
+        print(f"ERROR: {error_msg}")
         
-        # フォールバック: メモリなしでエージェントを作成して再試行
-        try:
-            print(f"DEBUG: Attempting fallback without memory")
-            fallback_agent = await _create_fallback_agent(session_id, actor_id)
-            
-            # フォールバックエージェントで再実行
-            async for event in fallback_agent.stream_async(query):
-                await _extract_health_coach_events(queue, event, state)
-            
-            if queue:
-                await send_event(queue, "Healthmate-CoachAIが応答を完了（フォールバック）", "complete")
-            
-            print(f"DEBUG: Fallback agent response completed")
-            return state["text"]
-            
-        except Exception as fallback_error:
-            final_error_msg = f"Healthmate-CoachAIのフォールバック処理も失敗しました: {fallback_error}"
-            print(f"ERROR: Fallback error: {fallback_error}")
-            if queue:
-                await send_event(queue, final_error_msg, "error")
-            return "申し訳ございません。現在システムに問題が発生しています。しばらく時間をおいて再度お試しください。"
+        if queue:
+            await send_event(queue, error_msg, "error")
+        
+        # AgentCore Memoryが使用できない場合はエラーとして処理を停止
+        raise Exception(f"AgentCore Memoryが利用できません。システム管理者に連絡してください。詳細: {e}")
 
 
 # AgentCore アプリケーションを初期化
