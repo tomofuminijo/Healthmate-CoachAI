@@ -1,10 +1,10 @@
-# HealthCoachAI エージェント
+# Healthmate-CoachAI エージェント
 
 Amazon Bedrock AgentCore Runtime上で動作する健康支援AIエージェントです。
 
 ## 概要
 
-HealthCoachAIは、ユーザーの健康目標達成を支援するAIエージェントです。以下の機能を提供します：
+Healthmate-CoachAIは、ユーザーの健康目標達成を支援するAIエージェントです。以下の機能を提供します：
 
 - 健康データの分析とパーソナライズされたアドバイス
 - 健康目標の設定と進捗追跡
@@ -54,8 +54,8 @@ HealthCoachAIは、ユーザーの健康目標達成を支援するAIエージ�
 
 ```bash
 # 1. リポジトリをクローン
-git clone https://github.com/tomofuminijo/HealthCoachAI.git
-cd HealthCoachAI
+git clone https://github.com/tomofuminijo/Healthmate-CoachAI.git
+cd Healthmate-CoachAI
 
 # 2. 仮想環境を作成・アクティベート
 python3 -m venv venv
@@ -117,7 +117,7 @@ export COGNITO_CLIENT_SECRET="your-client-secret"
 ```bash
 # リポジトリのクローン
 git clone <repository-url>
-cd health-coach-ai
+cd healthmate-coach-ai
 
 # 仮想環境の作成
 python -m venv venv
@@ -131,7 +131,7 @@ pip install -r requirements.txt
 
 ```bash
 # 直接実行
-python health_coach_ai/agent.py
+python healthmate_coach_ai/agent.py
 
 # ランナースクリプトを使用
 python run_agent.py
@@ -193,7 +193,7 @@ python manual_test_deployed_agent.py
 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   フロントエンド │    │  HealthCoachAI   │    │   MCPサーバー   │
+│   フロントエンド │    │ Healthmate-CoachAI │    │   MCPサーバー   │
 │      UI         │───▶│   エージェント   │───▶│   (バックエンド) │
 │                 │    │                  │    │                 │
 │ JWT Token       │    │ • JWT Decode     │    │ • User Mgmt     │
@@ -215,8 +215,8 @@ python manual_test_deployed_agent.py
 ## プロジェクト構成
 
 ```
-health_coach_ai/
-├── health_coach_ai/
+healthmate_coach_ai/
+├── healthmate_coach_ai/
 │   ├── __init__.py
 │   └── agent.py                    # メインエージェント実装（AgentCore Memory統合）
 ├── manual_test_agent.py           # ローカル開発テストプログラム
@@ -311,7 +311,7 @@ python manual_test_deployed_agent.py
 
 ### セッション継続性
 
-HealthCoachAIは**AgentCore Memory**を統合し、会話の文脈を記憶します：
+Healthmate-CoachAIは**AgentCore Memory**を統合し、会話の文脈を記憶します：
 
 - **自動セッション管理**: `AgentCoreMemorySessionManager`による透明なセッション処理
 - **会話の継続性**: 前回の会話内容を参照した一貫性のあるアドバイス
@@ -323,10 +323,10 @@ HealthCoachAIは**AgentCore Memory**を統合し、会話の文脈を記憶し�
 ```yaml
 # .bedrock_agentcore.yaml
 agents:
-  health_coach_ai:
+  healthmate_coach_ai:
     bedrock_agentcore:
       memory:
-        memory_id: "health_coach_ai_mem-yxqD6w75pO"
+        memory_id: "healthmate_coach_ai_mem-yxqD6w75pO"
         enabled: true
 ```
 
@@ -345,7 +345,7 @@ python manual_test_deployed_agent.py
 
 ## 🗑️ アンデプロイ（削除）
 
-HealthCoachAIエージェントをAWSから完全に削除する場合：
+Healthmate-CoachAIエージェントをAWSから完全に削除する場合：
 
 ### ワンコマンドアンデプロイ
 
@@ -381,7 +381,7 @@ agentcore destroy --delete-ecr-repo
 
 # 3. AgentCore Memoryリソースを削除
 AWS_DEFAULT_REGION=us-west-2 agentcore memory list
-AWS_DEFAULT_REGION=us-west-2 agentcore memory delete health_coach_ai_mem-yxqD6w75pO
+AWS_DEFAULT_REGION=us-west-2 agentcore memory delete healthmate_coach_ai_mem-yxqD6w75pO
 
 # 4. ローカル設定ファイルを削除
 rm -f .bedrock_agentcore.yaml
