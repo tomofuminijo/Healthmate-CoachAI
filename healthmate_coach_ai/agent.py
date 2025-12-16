@@ -708,159 +708,127 @@ app = BedrockAgentCoreApp()
 
 @app.entrypoint
 async def invoke(payload):
-    """Healthmate-CoachAI のエントリーポイント"""
+    """
+    Healthmate-CoachAI のエントリーポイント
+    
+    Expected Payload Structure (from HealthmateUI service):
+    {
+        "prompt": "ユーザーからのメッセージ",
+        "sessionState": {
+            "sessionAttributes": {
+                "session_id": "healthmate-chat-...",  // 必須: セッション継続性（33文字以上）
+                "jwt_token": "eyJ...",                // 必須: 認証とuser_id抽出
+                "timezone": "Asia/Tokyo",             // オプション: 時間帯対応アドバイス用（デフォルト: "Asia/Tokyo"）
+                "language": "ja"                      // オプション: 言語設定用（デフォルト: "ja"）
+            }
+        }
+    }
+    
+    Required Fields (厳格なバリデーション):
+    - jwt_token: 必須。存在しない場合はエラーで処理を停止
+    - session_id: 必須。存在しないか33文字未満の場合はエラーで処理を停止
+    - user_id: jwt_token の 'sub' フィールドから自動抽出。抽出できない場合はエラー
+    
+    Optional Fields (デフォルト値あり):
+    - timezone: デフォルト "Asia/Tokyo"
+    - language: デフォルト "ja"
+    
+    Error Handling:
+    - 必須フィールドが不足している場合、フォールバック処理は行わずエラーメッセージを返す
+    - 最適化されたペイロード構造により、重複情報は除外されています
+    """
     # デバッグ: ペイロード全体を確認
     print(f"DEBUG: Full payload: {payload}")
     
-    prompt = payload.get("input", {}).get("prompt", "")
+    # Extract data from optimized payload structure
+    prompt = payload.get("prompt", "")
     
-    # 別の可能性も試す
-    if not prompt:
-        prompt = payload.get("prompt", "")
-    if not prompt:
-        prompt = payload.get("message", "")
-    
-    # JWTトークンをペイロードから直接取得を試行
-    jwt_token_from_payload = None
-    
-    # 様々な場所からJWTトークンを探す
-    if "jwt_token" in payload:
-        jwt_token_from_payload = payload["jwt_token"]
-        print(f"DEBUG: JWT token from payload.jwt_token: {jwt_token_from_payload[:50]}...")
-    elif "input" in payload and isinstance(payload["input"], dict) and "jwt_token" in payload["input"]:
-        jwt_token_from_payload = payload["input"]["jwt_token"]
-        print(f"DEBUG: JWT token from payload.input.jwt_token: {jwt_token_from_payload[:50]}...")
-    elif "sessionState" in payload and "sessionAttributes" in payload["sessionState"]:
+    # Extract session attributes (optimized payload structure)
+    session_attrs = {}
+    if "sessionState" in payload and "sessionAttributes" in payload["sessionState"]:
         session_attrs = payload["sessionState"]["sessionAttributes"]
-        if "jwt_token" in session_attrs:
-            jwt_token_from_payload = session_attrs["jwt_token"]
-            print(f"DEBUG: JWT token from sessionState: {jwt_token_from_payload[:50]}...")
     
-    # さらに詳細な検索（エラーハンドリング付き）
+    # Extract required fields from session attributes
+    jwt_token_from_payload = session_attrs.get("jwt_token")
+    timezone_from_payload = session_attrs.get("timezone", "Asia/Tokyo")  # Default timezone
+    language_from_payload = session_attrs.get("language", "ja")  # Default language
+    session_id_from_payload = session_attrs.get("session_id")
+    
+    # Strict validation for required fields
     if not jwt_token_from_payload:
-        print(f"DEBUG: Searching for JWT token in all payload keys...")
-        try:
-            def search_jwt_recursive(obj, path=""):
-                if isinstance(obj, dict):
-                    for key, value in obj.items():
-                        current_path = f"{path}.{key}" if path else key
-                        if key == "jwt_token" and isinstance(value, str) and len(value) > 50:
-                            print(f"DEBUG: Found JWT token at {current_path}: {value[:50]}...")
-                            return value
-                        elif isinstance(value, (dict, list)):
-                            result = search_jwt_recursive(value, current_path)
-                            if result:
-                                return result
-                elif isinstance(obj, list):
-                    for i, item in enumerate(obj):
-                        current_path = f"{path}[{i}]" if path else f"[{i}]"
-                        result = search_jwt_recursive(item, current_path)
-                        if result:
-                            return result
-                return None
-            
-            jwt_token_from_payload = search_jwt_recursive(payload)
-        except Exception as e:
-            print(f"DEBUG: Error during JWT token search: {e}")
-            jwt_token_from_payload = None
+        error_msg = "必須フィールド 'jwt_token' がペイロードに含まれていません。認証が必要です。"
+        print(f"ERROR: {error_msg}")
+        yield {
+            "event": {
+                "contentBlockDelta": {
+                    "delta": {
+                        "text": f"エラー: {error_msg}"
+                    }
+                }
+            }
+        }
+        return
     
-    # タイムゾーンをペイロードから取得（エラーハンドリング付き）
-    timezone_from_payload = None
-    try:
-        if "timezone" in payload:
-            timezone_from_payload = payload["timezone"]
-            print(f"DEBUG: Timezone from payload.timezone: {timezone_from_payload}")
-        elif "input" in payload and isinstance(payload["input"], dict) and "timezone" in payload["input"]:
-            timezone_from_payload = payload["input"]["timezone"]
-            print(f"DEBUG: Timezone from payload.input.timezone: {timezone_from_payload}")
-        elif "sessionState" in payload and "sessionAttributes" in payload["sessionState"]:
-            session_attrs = payload["sessionState"]["sessionAttributes"]
-            if "timezone" in session_attrs:
-                timezone_from_payload = session_attrs["timezone"]
-                print(f"DEBUG: Timezone from sessionState: {timezone_from_payload}")
-    except Exception as e:
-        print(f"DEBUG: Error extracting timezone: {e}")
-        timezone_from_payload = None
+    if not session_id_from_payload:
+        error_msg = "必須フィールド 'session_id' がペイロードに含まれていません。セッション管理が必要です。"
+        print(f"ERROR: {error_msg}")
+        yield {
+            "event": {
+                "contentBlockDelta": {
+                    "delta": {
+                        "text": f"エラー: {error_msg}"
+                    }
+                }
+            }
+        }
+        return
     
-    # 言語をペイロードから取得（エラーハンドリング付き）
-    language_from_payload = None
-    try:
-        if "language" in payload:
-            language_from_payload = payload["language"]
-            print(f"DEBUG: Language from payload.language: {language_from_payload}")
-        elif "input" in payload and isinstance(payload["input"], dict) and "language" in payload["input"]:
-            language_from_payload = payload["input"]["language"]
-            print(f"DEBUG: Language from payload.input.language: {language_from_payload}")
-        elif "sessionState" in payload and "sessionAttributes" in payload["sessionState"]:
-            session_attrs = payload["sessionState"]["sessionAttributes"]
-            if "language" in session_attrs:
-                language_from_payload = session_attrs["language"]
-                print(f"DEBUG: Language from sessionState: {language_from_payload}")
-    except Exception as e:
-        print(f"DEBUG: Error extracting language: {e}")
-        language_from_payload = None
+    if len(session_id_from_payload) < 33:
+        error_msg = f"session_id の長さが不正です（{len(session_id_from_payload)}文字）。33文字以上が必要です。"
+        print(f"ERROR: {error_msg}")
+        yield {
+            "event": {
+                "contentBlockDelta": {
+                    "delta": {
+                        "text": f"エラー: {error_msg}"
+                    }
+                }
+            }
+        }
+        return
     
-    # セッションIDをペイロードから取得（エラーハンドリング付き）
-    session_id_from_payload = None
-    try:
-        if "sessionState" in payload and "sessionAttributes" in payload["sessionState"]:
-            session_attrs = payload["sessionState"]["sessionAttributes"]
-            if "session_id" in session_attrs:
-                session_id_from_payload = session_attrs["session_id"]
-                print(f"DEBUG: Session ID from sessionState: {session_id_from_payload}")
-    except Exception as e:
-        print(f"DEBUG: Error extracting session ID: {e}")
-        session_id_from_payload = None
+    # Log extracted values (after validation)
+    print(f"DEBUG: JWT token extracted: {jwt_token_from_payload[:50]}...")
+    print(f"DEBUG: Timezone: {timezone_from_payload}")
+    print(f"DEBUG: Language: {language_from_payload}")
+    print(f"DEBUG: Session ID: {session_id_from_payload} (length: {len(session_id_from_payload)})")
     
-    # グローバル変数に設定（JWT処理用）
-    if jwt_token_from_payload:
-        global _current_jwt_token, _current_timezone, _current_language
-        _current_jwt_token = jwt_token_from_payload
-        print(f"DEBUG: Set global JWT token: {jwt_token_from_payload[:50]}...")
-    else:
-        print(f"DEBUG: No JWT token found in payload")
+    # Set global variables for JWT processing
+    global _current_jwt_token, _current_timezone, _current_language
+    _current_jwt_token = jwt_token_from_payload
+    _current_timezone = timezone_from_payload
+    _current_language = language_from_payload
     
-    if timezone_from_payload:
-        _current_timezone = timezone_from_payload
-        print(f"DEBUG: Set global timezone: {timezone_from_payload}")
-    else:
-        _current_timezone = None
-        print(f"DEBUG: No timezone found in payload")
-    
-    if language_from_payload:
-        _current_language = language_from_payload
-        print(f"DEBUG: Set global language: {language_from_payload}")
-    else:
-        _current_language = None
-        print(f"DEBUG: No language found in payload")
-    
-    # セッションIDとactor_IDを準備
+    # Use validated session ID (no fallback generation)
     session_id = session_id_from_payload
-    if not session_id or len(session_id) < 33:
-        # セッションIDが無効な場合はデフォルトを生成（33文字以上を保証）
-        import uuid
-        session_id = f"healthmate-session-{uuid.uuid4().hex}"
-        print(f"DEBUG: Generated default session ID: {session_id} (length: {len(session_id)})")
-    else:
-        print(f"DEBUG: Using provided session ID: {session_id} (length: {len(session_id)})")
     
-    # セッションID長さの最終検証
-    if len(session_id) < 33:
-        # 追加のランダム文字列で33文字以上を保証
-        import uuid
-        additional_chars = uuid.uuid4().hex[:33-len(session_id)+5]
-        session_id = f"{session_id}-{additional_chars}"
-        print(f"DEBUG: Extended session ID to meet 33+ char requirement: {session_id} (length: {len(session_id)})")
-    
-    # JWTからactor_IDを取得
+    # Extract actor ID from JWT
     actor_id = _get_user_id_from_jwt()
     if not actor_id:
-        actor_id = "anonymous_user"
-        print(f"DEBUG: Using anonymous actor_id")
-    else:
-        print(f"DEBUG: Using JWT actor_id: {actor_id}")
+        error_msg = "JWT トークンからユーザーIDを抽出できませんでした。有効な認証トークンが必要です。"
+        print(f"ERROR: {error_msg}")
+        yield {
+            "event": {
+                "contentBlockDelta": {
+                    "delta": {
+                        "text": f"エラー: {error_msg}"
+                    }
+                }
+            }
+        }
+        return
     
-    print(f"DEBUG: Final session_id: {session_id}, actor_id: {actor_id}")
+    print(f"DEBUG: Session ID: {session_id}, Actor ID: {actor_id}")
     
     if not prompt:
         yield {"event": {"contentBlockDelta": {"delta": {"text": "こんにちは！健康に関してどのようなサポートが必要ですか？"}}}}

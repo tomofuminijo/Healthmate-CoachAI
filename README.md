@@ -189,6 +189,42 @@ python manual_test_deployed_agent.py
 2. **会話の文脈継続**: 健康目標設定→進捗確認方法の質問
 3. **セッションID管理**: 同一セッションでの会話継続性確認
 
+## API仕様
+
+### ペイロード構造
+
+HealthmateUI サービスから送信される最適化されたペイロード：
+
+```json
+{
+  "prompt": "ユーザーからのメッセージ",
+  "sessionState": {
+    "sessionAttributes": {
+      "session_id": "healthmate-chat-1234567890-abcdef",  // セッション継続性に必要
+      "jwt_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...", // 認証とuser_id抽出に必要
+      "timezone": "Asia/Tokyo",                            // 時間帯対応アドバイスに必要
+      "language": "ja"                                     // 言語設定に必要
+    }
+  }
+}
+```
+
+### ペイロード要素の説明
+
+| フィールド | 必須 | 説明 |
+|-----------|------|------|
+| `prompt` | ✅ | ユーザーからのメッセージ |
+| `sessionState.sessionAttributes.session_id` | ✅ | セッション継続性のためのID（33文字以上） |
+| `sessionState.sessionAttributes.jwt_token` | ✅ | Cognito JWT トークン（user_id抽出用） |
+| `sessionState.sessionAttributes.timezone` | ⚪ | ユーザーのタイムゾーン（デフォルト: "Asia/Tokyo"） |
+| `sessionState.sessionAttributes.language` | ⚪ | ユーザーの言語設定（デフォルト: "ja"） |
+
+### 自動処理される情報
+
+- **user_id**: JWT トークンの `sub` フィールドから自動抽出
+- **現在日時**: ユーザーのタイムゾーンに基づいて自動計算
+- **セッション管理**: AgentCore Memory による自動セッション継続
+
 ## アーキテクチャ
 
 ```
