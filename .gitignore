@@ -87,3 +87,7 @@ test_*_userid.py
 # Local development files
 local_config.py
 dev_settings.py
+
+# AgentCore generated files
+.bedrock_agentcore*
+
