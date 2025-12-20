@@ -15,7 +15,7 @@ from strands import Agent, tool
 from bedrock_agentcore.runtime import BedrockAgentCoreApp, BedrockAgentCoreContext
 from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
 from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
-from .m2m_auth_config import M2MAuthConfig
+from healthmate_coach_ai.m2m_auth_config import M2MAuthConfig
 
 # M2M認証用デコレータのインポート
 try:
@@ -301,9 +301,17 @@ async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str)
 - ツールの名称などは、本アプリのユーザにとっては不要な情報なので、ユーザに気が付かないようにツールを使う
 """
     
+    # 環境変数からモデル識別子を取得
+    model_id = os.environ.get('HEALTHMATE_AI_MODEL')
+    if not model_id:
+        raise Exception("環境変数 HEALTHMATE_AI_MODEL が設定されていません")
+    
+    # 使用するモデルをログに出力
+    print(f"🤖 使用AIモデル: {model_id}")
+    
     # Strandsエージェントを作成（メモリ統合付き）
     return Agent(
-        model="global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=model_id,
         tools=[list_health_tools, health_manager_mcp],
         session_manager=session_manager,
         system_prompt=system_prompt

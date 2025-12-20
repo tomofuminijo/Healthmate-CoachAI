@@ -7,6 +7,6 @@ Amazon Bedrock AgentCore Runtime上で動作するPython + Strands Agentsベー�
 
 __version__ = "0.1.0"
 
-from .agent import app
-
-__all__ = ["app"]
+# AgentCoreの実行時にモジュール衝突を避けるため、
+# 直接インポートは行わない
+__all__ = []

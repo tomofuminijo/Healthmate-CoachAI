@@ -82,12 +82,19 @@ aws configure
 export AWS_ACCESS_KEY_ID="your-access-key"
 export AWS_SECRET_ACCESS_KEY="your-secret-key"
 export AWS_REGION="us-west-2"
+
+# AIモデル設定（オプション）
+export HEALTHMATE_AI_MODEL="global.anthropic.claude-sonnet-4-5-20250929-v1:0"
 ```
 
 ### 3. ワンコマンドデプロイ
 
 ```bash
 # カスタムIAMロール自動作成 + M2M認証設定 + デプロイ
+./deploy_to_aws.sh
+
+# 異なるAIモデルを使用する場合
+export HEALTHMATE_AI_MODEL="global.anthropic.claude-3-5-sonnet-20241022-v2:0"
 ./deploy_to_aws.sh
 ```
 
@@ -179,6 +186,13 @@ export HEALTH_STACK_NAME="Custom-Healthmate-HealthManagerStack"
 
 # AWSリージョンのカスタマイズ（デフォルト: us-west-2）
 export AWS_REGION="your-aws-region"
+
+# AIモデルのカスタマイズ（デフォルト: Claude Sonnet 4.5）
+export HEALTHMATE_AI_MODEL="global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+# 利用可能なモデル例:
+# export HEALTHMATE_AI_MODEL="global.anthropic.claude-3-5-sonnet-20241022-v2:0"
+# export HEALTHMATE_AI_MODEL="global.anthropic.claude-3-5-haiku-20241022-v1:0"
 ```
 
 ## 🧪 開発・テスト

@@ -147,12 +147,21 @@ echo "🔐 M2M認証設定を準備中..."
 AGENTCORE_PROVIDER_NAME="healthmanager-oauth2-provider"
 echo "   プロバイダー名: $AGENTCORE_PROVIDER_NAME"
 
+# AIモデル設定（手動変更可能）
+echo ""
+echo "🤖 AIモデル設定を準備中..."
+HEALTHMATE_AI_MODEL=${HEALTHMATE_AI_MODEL:-"global.anthropic.claude-sonnet-4-5-20250929-v1:0"}
+echo "   使用モデル: $HEALTHMATE_AI_MODEL"
+echo "   💡 モデルを変更する場合は環境変数 HEALTHMATE_AI_MODEL を設定してください"
+echo "      例: export HEALTHMATE_AI_MODEL=\"global.anthropic.claude-3-5-sonnet-20241022-v2:0\""
+
 # 必須環境変数の検証
 echo ""
 echo "🔍 必須環境変数を検証中..."
 echo "   ✅ HEALTHMANAGER_GATEWAY_ID: $GATEWAY_ID"
 echo "   ✅ AWS_REGION: $AWS_DEFAULT_REGION"
 echo "   ✅ AGENTCORE_PROVIDER_NAME: $AGENTCORE_PROVIDER_NAME"
+echo "   ✅ HEALTHMATE_AI_MODEL: $HEALTHMATE_AI_MODEL"
 
 # AgentCore デプロイを実行（M2M認証環境変数付き）
 echo ""
@@ -160,7 +169,8 @@ echo "🚀 M2M認証対応でAgentCore デプロイを開始..."
 agentcore launch \
     --env HEALTHMANAGER_GATEWAY_ID="$GATEWAY_ID" \
     --env AWS_REGION="$AWS_DEFAULT_REGION" \
-    --env AGENTCORE_PROVIDER_NAME="$AGENTCORE_PROVIDER_NAME"
+    --env AGENTCORE_PROVIDER_NAME="$AGENTCORE_PROVIDER_NAME" \
+    --env HEALTHMATE_AI_MODEL="$HEALTHMATE_AI_MODEL"
 
 echo ""
 echo "✅ M2M認証対応デプロイが完了しました！"
@@ -170,6 +180,7 @@ echo "   🎭 使用したIAMロール: $CUSTOM_ROLE_ARN"
 echo "   📍 リージョン: $AWS_DEFAULT_REGION"
 echo "   🏢 アカウント: $ACCOUNT_ID"
 echo "   🔐 M2Mプロバイダー: $AGENTCORE_PROVIDER_NAME"
+echo "   🤖 AIモデル: $HEALTHMATE_AI_MODEL"
 echo ""
 echo "🔐 IAMロールに含まれる権限:"
 echo "   ✅ AgentCore Runtime基本権限"
@@ -183,6 +194,10 @@ echo "   ✅ Cognito Scope: HealthManager/HealthTarget:invoke"
 echo "   ✅ Auth Flow: M2M"
 echo "   ✅ Gateway ID: $GATEWAY_ID"
 echo "   ✅ Memory: AgentCore Runtime自動生成"
+echo ""
+echo "🤖 AIモデル設定:"
+echo "   ✅ 現在のモデル: $HEALTHMATE_AI_MODEL"
+echo "   💡 モデル変更方法: export HEALTHMATE_AI_MODEL=\"新しいモデル名\" && ./deploy_to_aws.sh"
 echo ""
 echo "📋 次のステップ:"
 echo "   1. agentcore status でエージェント状態を確認"
