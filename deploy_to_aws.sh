@@ -6,7 +6,7 @@
 set -e  # エラー時に停止
 
 echo "🚀 Healthmate-CoachAI エージェントをAWSにデプロイします"
-echo "=" * 80
+echo "================================================================================"
 
 # AWS設定
 export AWS_DEFAULT_REGION=${AWS_REGION:-us-west-2}
@@ -40,6 +40,12 @@ if aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
     # IAMロールのインラインポリシーを更新
     echo "🔄 IAMロールのインラインポリシーを最新版に更新中..."
     INLINE_POLICY_NAME="Healthmate-CoachAI-Runtime-Policy"
+    
+    # bedrock-agentcore-runtime-policy.jsonファイルの存在確認
+    if [ ! -f "bedrock-agentcore-runtime-policy.json" ]; then
+        echo "❌ bedrock-agentcore-runtime-policy.json ファイルが見つかりません"
+        exit 1
+    fi
     
     # インラインポリシーを更新（既存の場合は上書き）
     echo "📜 インラインポリシーを更新中..."
@@ -75,11 +81,19 @@ else
 fi
 
 # 仮想環境をアクティベート（存在する場合）
-if [ -d "venv" ]; then
+if [ -d ".venv" ]; then
+    echo ""
+    echo "🐍 仮想環境をアクティベート中..."
+    source .venv/bin/activate
+    echo "✅ 仮想環境アクティベート完了"
+elif [ -d "venv" ]; then
     echo ""
     echo "🐍 仮想環境をアクティベート中..."
     source venv/bin/activate
     echo "✅ 仮想環境アクティベート完了"
+else
+    echo ""
+    echo "⚠️  仮想環境が見つかりません。グローバル環境を使用します。"
 fi
 
 echo ""
@@ -146,8 +160,7 @@ echo "🚀 M2M認証対応でAgentCore デプロイを開始..."
 agentcore launch \
     --env HEALTHMANAGER_GATEWAY_ID="$GATEWAY_ID" \
     --env AWS_REGION="$AWS_DEFAULT_REGION" \
-    --env AGENTCORE_PROVIDER_NAME="$AGENTCORE_PROVIDER_NAME" \
-    --au
+    --env AGENTCORE_PROVIDER_NAME="$AGENTCORE_PROVIDER_NAME"
 
 echo ""
 echo "✅ M2M認証対応デプロイが完了しました！"
