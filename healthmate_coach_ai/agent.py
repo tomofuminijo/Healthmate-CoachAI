@@ -16,6 +16,7 @@ from bedrock_agentcore.runtime import BedrockAgentCoreApp, BedrockAgentCoreConte
 from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
 from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
 from healthmate_coach_ai.m2m_auth_config import M2MAuthConfig
+from fastapi.middleware.cors import CORSMiddleware
 
 # M2M認証用デコレータのインポート
 try:
@@ -420,6 +421,20 @@ async def invoke_health_coach(query, session_id, actor_id, queue=None):
 
 # AgentCore アプリケーションを初期化
 app = BedrockAgentCoreApp()
+
+# Add CORS middleware to allow browser requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],           # Customize in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Handle browser preflight requests to /invocations
+@app.options("/invocations")
+async def options_handler():
+    return {"message": "OK"}
 
 
 @app.entrypoint
