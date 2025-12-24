@@ -452,7 +452,6 @@ async def invoke(payload, context):
         return
 
     # 必須フィールドを抽出
-#    jwt_token_from_payload = session_attrs.get("jwt_token")
     jwt_token_from_context = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else auth_header
     session_id_from_payload = session_attrs.get("session_id")
     timezone_from_payload = session_attrs.get("timezone", "Asia/Tokyo")

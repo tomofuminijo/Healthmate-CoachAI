@@ -373,7 +373,6 @@ payload = {
     "sessionState": {
         "sessionAttributes": {
             "session_id": session_id,
-            "jwt_token": access_token,
             "timezone": "Asia/Tokyo",
             "language": "ja"
         }
@@ -424,7 +423,6 @@ const payload = {
     sessionState: {
         sessionAttributes: {
             session_id: sessionId,
-            jwt_token: accessToken,
             timezone: "Asia/Tokyo",
             language: "ja"
         }
@@ -505,7 +503,6 @@ class HealthCoachClient:
             "sessionState": {
                 "sessionAttributes": {
                     "session_id": session_id,
-                    "jwt_token": access_token,
                     "timezone": timezone,
                     "language": language
                 }
@@ -634,12 +631,16 @@ HealthmateUI サービスから送信される最適化されたペイロード�
   "sessionState": {
     "sessionAttributes": {
       "session_id": "healthmate-chat-1234567890-abcdef",
-      "jwt_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
       "timezone": "Asia/Tokyo",
       "language": "ja"
     }
   }
 }
+```
+
+**注意**: JWT トークンは Authorization ヘッダーで送信されます：
+```http
+Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
 ### ペイロード要素の説明
@@ -648,9 +649,14 @@ HealthmateUI サービスから送信される最適化されたペイロード�
 |-----------|------|------|
 | `prompt` | ✅ | ユーザーからのメッセージ |
 | `sessionState.sessionAttributes.session_id` | ✅ | セッション継続性のためのID（33文字以上） |
-| `sessionState.sessionAttributes.jwt_token` | ✅ | Cognito JWT トークン（user_id抽出用） |
 | `sessionState.sessionAttributes.timezone` | ⚪ | ユーザーのタイムゾーン（デフォルト: "Asia/Tokyo"） |
 | `sessionState.sessionAttributes.language` | ⚪ | ユーザーの言語設定（デフォルト: "ja"） |
+
+### 認証ヘッダー
+
+| ヘッダー | 必須 | 説明 |
+|---------|------|------|
+| `Authorization` | ✅ | Cognito JWT Access Token（Bearer形式、user_id抽出用） |
 
 ### 認証アーキテクチャ
 
