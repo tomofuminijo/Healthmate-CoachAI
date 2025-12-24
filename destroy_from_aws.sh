@@ -95,7 +95,7 @@ echo ""
 echo "🧠 メモリリソースを確認中..."
 
 # メモリリソースの確認と削除
-MEMORY_LIST=$(AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION agentcore memory list --format json 2>/dev/null || echo "[]")
+MEMORY_LIST=$(AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION aws bedrock-agentcore-control list-memories --query "memories[*].id" --output text 2>/dev/null || echo "[]")
 
 if echo "$MEMORY_LIST" | grep -q "healthmate_coach_ai_mem"; then
     echo "🔍 Healthmate-CoachAI関連のメモリリソースが見つかりました。削除中..."
