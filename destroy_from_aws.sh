@@ -1,15 +1,49 @@
 #!/bin/bash
 
 # Healthmate-CoachAI エージェントをAWSからアンデプロイするスクリプト
-# 全てのAWSリソースとローカル設定を削除
+# 環境別設定対応版 - HEALTHMATE_ENV環境変数に基づく環境別アンデプロイ
 
 set -e  # エラー時に停止
 
-echo "🗑️  Healthmate-CoachAI エージェントをAWSからアンデプロイします"
-echo "=" * 80
+echo "🗑️  Healthmate-CoachAI エージェントをAWSからアンデプロイします（環境別設定対応）"
+echo "================================================================================"
+
+# 環境設定の初期化
+setup_environment_config() {
+    # HEALTHMATE_ENV環境変数の取得（デフォルト: dev）
+    export HEALTHMATE_ENV=${HEALTHMATE_ENV:-dev}
+    
+    # 有効な環境値の検証
+    case "$HEALTHMATE_ENV" in
+        dev|stage|prod)
+            echo "🌍 環境設定: $HEALTHMATE_ENV"
+            ;;
+        *)
+            echo "❌ 無効な環境値: $HEALTHMATE_ENV"
+            echo "   有効な値: dev, stage, prod"
+            echo "   デフォルトのdev環境を使用します"
+            export HEALTHMATE_ENV=dev
+            ;;
+    esac
+    
+    # 環境別サフィックスの設定
+    if [ "$HEALTHMATE_ENV" = "prod" ]; then
+        ENV_SUFFIX=""
+    else
+        ENV_SUFFIX="-${HEALTHMATE_ENV}"
+    fi
+    
+    echo "📋 環境設定:"
+    echo "   🌍 環境: $HEALTHMATE_ENV"
+    echo "   🏷️  サフィックス: $ENV_SUFFIX"
+}
+
+# 環境設定を実行
+setup_environment_config
 
 # AWS設定
 export AWS_DEFAULT_REGION=${AWS_REGION:-us-west-2}
+export AWS_REGION=$AWS_DEFAULT_REGION
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
 
 echo "🔐 AWS設定を確認中..."
@@ -29,7 +63,12 @@ fi
 echo "✅ AWS認証情報確認完了"
 
 # 仮想環境をアクティベート（存在する場合）
-if [ -d "venv" ]; then
+if [ -d ".venv" ]; then
+    echo ""
+    echo "🐍 仮想環境をアクティベート中..."
+    source .venv/bin/activate
+    echo "✅ 仮想環境アクティベート完了"
+elif [ -d "venv" ]; then
     echo ""
     echo "🐍 仮想環境をアクティベート中..."
     source venv/bin/activate
@@ -61,16 +100,21 @@ else
     
     echo ""
     echo "⚠️  以下のリソースが削除されます:"
-    echo "   - AgentCore エージェント"
+    echo "   - AgentCore エージェント (環境: $HEALTHMATE_ENV)"
     echo "   - ECR リポジトリ（全イメージ含む）"
     echo "   - CodeBuild プロジェクト"
-    echo "   - IAM ロール"
+    echo "   - IAM ロール (Healthmate-CoachAI-AgentCore-Runtime-Role${ENV_SUFFIX})"
     echo "   - S3 アーティファクト"
     echo "   - ローカル設定ファイル"
+    if [ "$HEALTHMATE_ENV" = "dev" ]; then
+        echo "   - メモリリソース (DEV環境のため削除)"
+    else
+        echo "   - メモリリソース (${HEALTHMATE_ENV}環境のため保持)"
+    fi
     echo ""
     echo "🚨 この操作は取り消せません！"
     echo ""
-    echo "本当にHealthCoachAIエージェントを削除しますか？ (y/N)"
+    echo "本当にHealthCoachAIエージェント (環境: $HEALTHMATE_ENV) を削除しますか？ (y/N)"
     read -r response
     
     if [[ ! "$response" =~ ^[Yy]$ ]]; then
@@ -94,26 +138,43 @@ fi
 echo ""
 echo "🧠 メモリリソースを確認中..."
 
-# メモリリソースの確認と削除
-MEMORY_LIST=$(AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION aws bedrock-agentcore-control list-memories --query "memories[*].id" --output text 2>/dev/null || echo "[]")
-
-if echo "$MEMORY_LIST" | grep -q "healthmate_coach_ai_mem"; then
-    echo "🔍 Healthmate-CoachAI関連のメモリリソースが見つかりました。削除中..."
+# メモリリソースの確認と削除（DEV環境のみ）
+if [ "$HEALTHMATE_ENV" = "dev" ]; then
+    echo "🔍 DEV環境のため、メモリリソースを削除します..."
     
-    # healthmate_coach_ai_mem で始まるメモリIDを抽出して削除
-    MEMORY_IDS=$(echo "$MEMORY_LIST" | grep -o 'healthmate_coach_ai_mem-[A-Za-z0-9]*' || true)
+    # 環境別メモリID名を生成
+    AGENT_NAME="healthmate_coach_ai"
+    if [ "$HEALTHMATE_ENV" != "prod" ]; then
+        AGENT_NAME="${AGENT_NAME}_${HEALTHMATE_ENV}"
+    fi
+    MEMORY_ID_PREFIX="${AGENT_NAME}_mem"
     
-    if [ -n "$MEMORY_IDS" ]; then
-        for MEMORY_ID in $MEMORY_IDS; do
-            echo "   削除中: $MEMORY_ID"
-            AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION agentcore memory delete "$MEMORY_ID" 2>/dev/null || echo "   ⚠️  $MEMORY_ID の削除に失敗しました（既に削除済みの可能性）"
-        done
-        echo "✅ メモリリソース削除完了"
+    echo "   検索対象メモリIDプレフィックス: $MEMORY_ID_PREFIX"
+    
+    # メモリリソースの確認と削除
+    MEMORY_LIST=$(AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION aws bedrock-agentcore-control list-memories --query "memories[*].id" --output text 2>/dev/null || echo "[]")
+    
+    if echo "$MEMORY_LIST" | grep -q "$MEMORY_ID_PREFIX"; then
+        echo "🔍 Healthmate-CoachAI関連のメモリリソースが見つかりました。削除中..."
+        
+        # 環境別メモリIDを抽出して削除
+        MEMORY_IDS=$(echo "$MEMORY_LIST" | grep -o "${MEMORY_ID_PREFIX}-[A-Za-z0-9]*" || true)
+        
+        if [ -n "$MEMORY_IDS" ]; then
+            for MEMORY_ID in $MEMORY_IDS; do
+                echo "   削除中: $MEMORY_ID"
+                AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION agentcore memory delete "$MEMORY_ID" 2>/dev/null || echo "   ⚠️  $MEMORY_ID の削除に失敗しました（既に削除済みの可能性）"
+            done
+            echo "✅ メモリリソース削除完了"
+        else
+            echo "ℹ️  削除対象のメモリリソースが見つかりませんでした。"
+        fi
     else
-        echo "ℹ️  削除対象のメモリリソースが見つかりませんでした。"
+        echo "ℹ️  Healthmate-CoachAI関連のメモリリソースは見つかりませんでした。"
     fi
 else
-    echo "ℹ️  Healthmate-CoachAI関連のメモリリソースは見つかりませんでした。"
+    echo "ℹ️  ${HEALTHMATE_ENV}環境のため、メモリリソースは保持されます。"
+    echo "   メモリリソースを削除したい場合は、DEV環境で実行してください。"
 fi
 
 echo ""
@@ -134,19 +195,27 @@ if [ -d ".bedrock_agentcore" ]; then
 fi
 
 echo ""
-echo "🎉 HealthCoachAI エージェントのアンデプロイが完了しました！"
+echo "🎉 HealthCoachAI エージェント (環境: $HEALTHMATE_ENV) のアンデプロイが完了しました！"
 echo ""
 echo "📋 削除されたリソース:"
-echo "   ✅ AgentCore エージェント"
+echo "   ✅ AgentCore エージェント (環境: $HEALTHMATE_ENV)"
 echo "   ✅ ECR リポジトリ（全イメージ）"
 echo "   ✅ CodeBuild プロジェクト"
-echo "   ✅ IAM ロール"
+echo "   ✅ IAM ロール (Healthmate-CoachAI-AgentCore-Runtime-Role${ENV_SUFFIX})"
 echo "   ✅ S3 アーティファクト"
-echo "   ✅ メモリリソース"
+if [ "$HEALTHMATE_ENV" = "dev" ]; then
+    echo "   ✅ メモリリソース (DEV環境のため削除)"
+else
+    echo "   ⚪ メモリリソース (${HEALTHMATE_ENV}環境のため保持)"
+fi
 echo "   ✅ ローカル設定ファイル"
 echo ""
 echo "💰 これで関連するAWSコストは発生しなくなります。"
 echo ""
 echo "🔄 再デプロイする場合は以下のコマンドを実行してください:"
-echo "   ./deploy_to_aws.sh"
+echo "   HEALTHMATE_ENV=$HEALTHMATE_ENV ./deploy_to_aws.sh"
+echo ""
+echo "💡 環境切り替え方法:"
+echo "   export HEALTHMATE_ENV=stage && ./destroy_from_aws.sh"
+echo "   export HEALTHMATE_ENV=prod && ./destroy_from_aws.sh"
 echo ""

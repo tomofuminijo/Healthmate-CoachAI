@@ -1,12 +1,42 @@
 #!/bin/bash
 
 # Healthmate-CoachAI エージェントをAWSにデプロイするスクリプト
-# カスタムIAMロールを使用したベストプラクティス版
+# 環境別設定対応版 - HEALTHMATE_ENV環境変数に基づく環境別デプロイ
 
 set -e  # エラー時に停止
 
-echo "🚀 Healthmate-CoachAI エージェントをAWSにデプロイします"
+echo "🚀 Healthmate-CoachAI エージェントをAWSにデプロイします（環境別設定対応）"
 echo "================================================================================"
+
+# 環境設定の初期化
+setup_environment_config() {
+    # HEALTHMATE_ENV環境変数の取得（デフォルト: dev）
+    export HEALTHMATE_ENV=${HEALTHMATE_ENV:-dev}
+    
+    # 有効な環境値の検証
+    case "$HEALTHMATE_ENV" in
+        dev|stage|prod)
+            echo "🌍 環境設定: $HEALTHMATE_ENV"
+            ;;
+        *)
+            echo "❌ 無効な環境値: $HEALTHMATE_ENV"
+            echo "   有効な値: dev, stage, prod"
+            echo "   デフォルトのdev環境を使用します"
+            export HEALTHMATE_ENV=dev
+            ;;
+    esac
+    
+    # 環境別サフィックスの設定
+    if [ "$HEALTHMATE_ENV" = "prod" ]; then
+        ENV_SUFFIX=""
+    else
+        ENV_SUFFIX="-${HEALTHMATE_ENV}"
+    fi
+    
+    echo "📋 環境設定:"
+    echo "   🌍 環境: $HEALTHMATE_ENV"
+    echo "   🏷️  サフィックス: $ENV_SUFFIX"
+}
 
 # AWS設定と認証情報の設定
 setup_aws_credentials() {
@@ -35,15 +65,18 @@ setup_aws_credentials() {
         echo "   認証方式: 既存の設定を使用"
     fi
     
-    # アカウントIDとロール設定
+    # アカウントIDとロール設定（環境別対応）
     ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-    ROLE_NAME="Healthmate-CoachAI-AgentCore-Runtime-Role"
+    ROLE_NAME="Healthmate-CoachAI-AgentCore-Runtime-Role${ENV_SUFFIX}"
     CUSTOM_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
     
     echo "📍 リージョン: $AWS_REGION"
     echo "🏢 アカウントID: $ACCOUNT_ID"
     echo "🎭 カスタムロール: $CUSTOM_ROLE_ARN"
 }
+
+# 環境設定を実行
+setup_environment_config
 
 # AWS設定を実行
 setup_aws_credentials
@@ -79,22 +112,15 @@ if aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
     fi
 else
     echo "❌ カスタムIAMロール '$ROLE_NAME' が見つかりません"
-    echo ""
-    echo "🛠️  カスタムIAMロールを作成しますか？ (y/N)"
-    read -r response
-    if [[ "$response" =~ ^[Yy]$ ]]; then
-        echo "🔧 カスタムIAMロールを作成中..."
-        python3 create_custom_iam_role.py
-        if [ $? -ne 0 ]; then
-            echo "❌ カスタムIAMロール作成に失敗しました"
-            exit 1
-        fi
-        echo "✅ カスタムIAMロール作成完了"
-    else
-        echo "❌ カスタムIAMロールが必要です。以下のコマンドで作成してください:"
-        echo "   python3 create_custom_iam_role.py"
+    echo "🔧 カスタムIAMロールを自動作成中..."
+    
+    # 環境別IAMロール作成のため、create_custom_iam_role.pyに環境変数を渡す
+    HEALTHMATE_ENV="$HEALTHMATE_ENV" python3 create_custom_iam_role.py
+    if [ $? -ne 0 ]; then
+        echo "❌ カスタムIAMロール作成に失敗しました"
         exit 1
     fi
+    echo "✅ カスタムIAMロール作成完了"
 fi
 
 # 仮想環境をアクティベート（存在する場合）
@@ -121,10 +147,10 @@ echo ""
 echo "🔧 AgentCore設定を更新中..."
 echo "   カスタムIAMロールを使用: $CUSTOM_ROLE_ARN"
 
-# CloudFormationからGateway IDを取得
+# CloudFormationから環境別Gateway IDを取得
 echo ""
 echo "🔍 Healthmate-HealthManagerスタックからGateway IDを取得中..."
-STACK_NAME="Healthmate-HealthManagerStack"
+STACK_NAME="Healthmate-HealthManagerStack${ENV_SUFFIX}"
 GATEWAY_ID=$(aws cloudformation describe-stacks \
     --stack-name "$STACK_NAME" \
     --query 'Stacks[0].Outputs[?OutputKey==`GatewayId`].OutputValue' \
@@ -138,10 +164,10 @@ fi
 
 echo "✅ Gateway ID取得成功: $GATEWAY_ID"
 
-# Cognito設定を取得
+# Cognito設定を環境別に取得
 echo ""
 echo "🔍 Healthmate-Coreスタックから認証設定を取得中..."
-CORE_STACK_NAME="Healthmate-CoreStack"
+CORE_STACK_NAME="Healthmate-CoreStack${ENV_SUFFIX}"
 USER_POOL_ID=$(aws cloudformation describe-stacks \
     --stack-name "$CORE_STACK_NAME" \
     --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
@@ -174,13 +200,25 @@ echo "🔐 JWT認証設定:"
 echo "   Discovery URL: $JWT_DISCOVERY_URL"
 echo "   Allowed Clients: $USER_POOL_CLIENT_ID"
 
-# AgentCore設定でカスタムロールとJWT認証を指定
+# 環境別プロバイダー名の生成
+PROVIDER_NAME="healthmanager-oauth2-provider${ENV_SUFFIX}"
+echo "🔗 AgentCore Provider Name: $PROVIDER_NAME"
+
+# AgentCore設定でカスタムロールとJWT認証を指定（環境別対応）
 echo ""
 echo "🔧 AgentCore設定を実行中..."
+
+# エージェント名の生成（ハイフンをアンダースコアに変換）
+AGENT_NAME="healthmate_coach_ai"
+if [ "$HEALTHMATE_ENV" != "prod" ]; then
+    AGENT_NAME="${AGENT_NAME}_${HEALTHMATE_ENV}"
+fi
+echo "🤖 エージェント名: $AGENT_NAME"
+
 agentcore configure \
     --entrypoint agent/healthmate_coach_ai/agent.py \
     --requirements-file agent/requirements.txt \
-    --name healthmate_coach_ai \
+    --name "$AGENT_NAME" \
     --execution-role "$CUSTOM_ROLE_ARN" \
     --deployment-type container \
     --ecr auto \
@@ -194,7 +232,7 @@ cat .bedrock_agentcore.yaml
 
 echo ""
 echo "🚀 AgentCore デプロイを開始します..."
-echo "   エージェント名: healthmate_coach_ai"
+echo "   エージェント名: $AGENT_NAME"
 echo "   エントリーポイント: healthmate_coach_ai/agent.py"
 echo "   カスタムIAMロール: $CUSTOM_ROLE_ARN"
 echo "   🔐 認証方式: JWT (Cognito)"
@@ -209,15 +247,18 @@ echo "🔍 デプロイ設定:"
 echo "   ✅ HEALTHMANAGER_GATEWAY_ID: $GATEWAY_ID"
 echo "   ✅ AWS_REGION: $AWS_REGION"
 echo "   ✅ HEALTHMATE_AI_MODEL: $HEALTHMATE_AI_MODEL"
+echo "   ✅ HEALTHMATE_ENV: $HEALTHMATE_ENV"
+echo "   ✅ AGENTCORE_PROVIDER_NAME: $PROVIDER_NAME"
 
-# AgentCore デプロイを実行
+# AgentCore デプロイを実行（環境変数追加）
 echo ""
 echo "🚀 AgentCore デプロイを開始..."
 agentcore launch \
     --env HEALTHMANAGER_GATEWAY_ID="$GATEWAY_ID" \
     --env AWS_REGION="$AWS_REGION" \
     --env HEALTHMATE_AI_MODEL="$HEALTHMATE_AI_MODEL" \
-    --env AGENTCORE_PROVIDER_NAME="healthmanager-oauth2-provider"
+    --env HEALTHMATE_ENV="$HEALTHMATE_ENV" \
+    --env AGENTCORE_PROVIDER_NAME="$PROVIDER_NAME"
 
 echo ""
 echo "✅ デプロイが完了しました！"
@@ -226,14 +267,20 @@ echo "📋 デプロイ情報:"
 echo "   🎭 IAMロール: $CUSTOM_ROLE_ARN"
 echo "   📍 リージョン: $AWS_REGION"
 echo "   🏢 アカウント: $ACCOUNT_ID"
+echo "   🌍 環境: $HEALTHMATE_ENV"
 echo "   🔐 認証方式: JWT (Cognito)"
 echo "   🔑 JWT Discovery URL: $JWT_DISCOVERY_URL"
 echo "   🤖 AIモデル: $HEALTHMATE_AI_MODEL"
+echo "   🔗 プロバイダー名: $PROVIDER_NAME"
 echo ""
-echo "� 次のステップ:"ま
+echo "🚀 次のステップ:"
 echo "   1. agentcore status でエージェント状態を確認"
 echo "   2. python manual_test_deployed_agent.py でテスト実行"
 echo "   3. HealthmateUI からエージェントを呼び出し"
+echo ""
+echo "💡 環境切り替え方法:"
+echo "   export HEALTHMATE_ENV=stage && ./deploy_to_aws.sh"
+echo "   export HEALTHMATE_ENV=prod && ./deploy_to_aws.sh"
 echo ""
 echo "💡 モデル変更方法:"
 echo "   export HEALTHMATE_AI_MODEL=\"新しいモデル名\" && ./deploy_to_aws.sh"

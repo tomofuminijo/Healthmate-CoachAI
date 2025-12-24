@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """
-Healthmate-CoachAI デプロイ済みエージェント手動テストプログラム
+Healthmate-CoachAI デプロイ済みエージェント手動テストプログラム（環境別設定対応）
 
 AWSにデプロイされたHealthmate-CoachAIエージェントを
 ターミナル上でプロンプト入力による手動テストを行います。
 JWT IDトークンを使用してboto3 bedrock-agentcoreクライアントで直接呼び出します。
+
+環境別設定対応:
+- HEALTHMATE_ENV環境変数に基づく環境別テスト（dev/stage/prod）
+- 環境別エージェント名の自動解決
+- 環境別設定ファイルの読み込み
 """
 
 import asyncio
@@ -23,6 +28,39 @@ import requests
 import urllib.parse
 from botocore.exceptions import ClientError
 from test_config_helper import test_config
+
+# ========================================
+# 環境設定
+# ========================================
+
+def get_environment_config():
+    """環境設定を取得"""
+    # HEALTHMATE_ENV環境変数の取得（デフォルト: dev）
+    environment = os.environ.get('HEALTHMATE_ENV', 'dev')
+    
+    # 有効な環境値の検証
+    if environment not in ['dev', 'stage', 'prod']:
+        print(f"❌ 無効な環境値: {environment}")
+        print("   有効な値: dev, stage, prod")
+        print("   デフォルトのdev環境を使用します")
+        environment = 'dev'
+    
+    # 環境別サフィックスの設定
+    env_suffix = "" if environment == "prod" else f"-{environment}"
+    
+    # 環境別エージェント名の生成
+    agent_name = "healthmate_coach_ai"
+    if environment != "prod":
+        agent_name = f"{agent_name}_{environment}"
+    
+    return {
+        'environment': environment,
+        'env_suffix': env_suffix,
+        'agent_name': agent_name
+    }
+
+# 環境設定を取得
+ENV_CONFIG = get_environment_config()
 
 # ========================================
 # テスト設定（ここで変更可能）
@@ -90,7 +128,7 @@ class DeployedAgentTestSession:
             return {}
     
     def _load_agent_runtime_arn(self):
-        """AgentCore設定ファイルからAgent Runtime ARNを取得"""
+        """AgentCore設定ファイルからAgent Runtime ARNを取得（環境別対応）"""
         try:
             config_file = '.bedrock_agentcore.yaml'
             if not os.path.exists(config_file):
@@ -99,17 +137,24 @@ class DeployedAgentTestSession:
             with open(config_file, 'r', encoding='utf-8') as f:
                 agentcore_config = yaml.safe_load(f)
             
-            # healthmate_coach_ai エージェントのARNを取得
+            # 環境別エージェント名でARNを取得
+            agent_name = ENV_CONFIG['agent_name']
             agents = agentcore_config.get('agents', {})
-            healthmate_coach_ai = agents.get('healthmate_coach_ai', {})
-            bedrock_agentcore = healthmate_coach_ai.get('bedrock_agentcore', {})
+            agent_config = agents.get(agent_name, {})
+            bedrock_agentcore = agent_config.get('bedrock_agentcore', {})
             agent_arn = bedrock_agentcore.get('agent_arn')
             
             if not agent_arn:
-                raise ValueError("Agent Runtime ARNが設定ファイルに見つかりません")
+                # 利用可能なエージェント名を表示
+                available_agents = list(agents.keys())
+                raise ValueError(f"Agent Runtime ARNが設定ファイルに見つかりません。\n"
+                               f"期待されるエージェント名: {agent_name}\n"
+                               f"利用可能なエージェント: {available_agents}")
             
             self.agent_runtime_arn = agent_arn
             print(f"   ✅ Agent Runtime ARN: {agent_arn}")
+            print(f"   🌍 環境: {ENV_CONFIG['environment']}")
+            print(f"   🤖 エージェント名: {agent_name}")
             return True
             
         except Exception as e:
@@ -126,7 +171,8 @@ class DeployedAgentTestSession:
                 return False
             
             # Agent Runtime ARNが取得できれば、エージェントは利用可能と判断
-            print("   ✅ healthmate_coach_ai エージェントのRuntime ARNが確認できました")
+            print(f"   ✅ {ENV_CONFIG['agent_name']} エージェントのRuntime ARNが確認できました")
+            print(f"   🌍 テスト環境: {ENV_CONFIG['environment']}")
             return True
             
         except Exception as e:
@@ -480,19 +526,26 @@ class DeployedAgentTestSession:
 
 
 def print_banner():
-    """バナー表示"""
+    """バナー表示（環境別対応）"""
     print("=" * 80)
-    print("🚀 HealthCoachAI デプロイ済みエージェント手動テストプログラム")
+    print("🚀 HealthCoachAI デプロイ済みエージェント手動テストプログラム（環境別設定対応）")
     print("=" * 80)
     print()
     print("このプログラムでは、AWSにデプロイされたHealthCoachAIエージェントを")
     print("手動でテストできます。JWTトークンは自動生成され、")
     print("boto3 bedrock-agentcore クライアントで直接AgentCore Runtime環境と連携します。")
-    print("� リboto3統合により、安定したエージェント呼び出しを実現します。")
+    print("🔗 boto3統合により、安定したエージェント呼び出しを実現します。")
     print()
-    print(f"🌍 テスト設定:")
+    print(f"🌍 環境設定:")
+    print(f"   環境: {ENV_CONFIG['environment']}")
+    print(f"   エージェント名: {ENV_CONFIG['agent_name']}")
     print(f"   タイムゾーン: {TEST_TIMEZONE}")
     print(f"   言語: {TEST_LANGUAGE}")
+    print()
+    print(f"💡 環境切り替え方法:")
+    print(f"   export HEALTHMATE_ENV=dev && python3 manual_test_deployed_agent.py")
+    print(f"   export HEALTHMATE_ENV=stage && python3 manual_test_deployed_agent.py")
+    print(f"   export HEALTHMATE_ENV=prod && python3 manual_test_deployed_agent.py")
     print()
 
 
@@ -599,7 +652,7 @@ async def main():
     
     if not agent_status_success:
         print("❌ エージェント状態の確認に失敗しました。")
-        print("   healthmate_coach_ai エージェントがAWSにデプロイされていることを確認してください。")
+        print(f"   {ENV_CONFIG['agent_name']} エージェント（環境: {ENV_CONFIG['environment']}）がAWSにデプロイされていることを確認してください。")
         return
     
     # 初回認証

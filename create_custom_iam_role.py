@@ -1,15 +1,33 @@
 #!/usr/bin/env python3
 """
-Healthmate-CoachAI用カスタムIAMロール作成スクリプト
+Healthmate-CoachAI用カスタムIAMロール作成スクリプト（環境別設定対応）
 
-AgentCore Runtime用の適切な権限を持つカスタムIAMロールを作成します。
+AgentCore Runtime用の適切な権限を持つカスタムIAMロールを環境別に作成します。
 """
 
 import boto3
 import json
 import sys
 import time
+import os
 from botocore.exceptions import ClientError
+
+
+def get_environment_config():
+    """環境設定を取得"""
+    env = os.environ.get('HEALTHMATE_ENV', 'dev')
+    
+    # 有効な環境値の検証
+    if env not in ['dev', 'stage', 'prod']:
+        print(f"❌ 無効な環境値: {env}")
+        print("   有効な値: dev, stage, prod")
+        print("   デフォルトのdev環境を使用します")
+        env = 'dev'
+    
+    # 環境別サフィックスの設定
+    env_suffix = "" if env == "prod" else f"-{env}"
+    
+    return env, env_suffix
 
 
 def load_policy_document(file_path: str) -> dict:
@@ -23,16 +41,20 @@ def load_policy_document(file_path: str) -> dict:
 
 
 def create_iam_role_and_policies():
-    """カスタムIAMロールとポリシーを作成"""
+    """カスタムIAMロールとポリシーを環境別に作成"""
+    
+    # 環境設定を取得
+    env, env_suffix = get_environment_config()
     
     # AWS設定
     region = 'us-west-2'
     account_id = boto3.client('sts').get_caller_identity()['Account']
-    role_name = 'Healthmate-CoachAI-AgentCore-Runtime-Role'
+    role_name = f'Healthmate-CoachAI-AgentCore-Runtime-Role{env_suffix}'
     
     print("=" * 80)
-    print("🔐 Healthmate-CoachAI用カスタムIAMロール作成")
+    print("🔐 Healthmate-CoachAI用カスタムIAMロール作成（環境別設定対応）")
     print("=" * 80)
+    print(f"🌍 環境: {env}")
     print(f"📍 リージョン: {region}")
     print(f"🏢 アカウントID: {account_id}")
     print(f"🎭 ロール名: {role_name}")
@@ -52,7 +74,7 @@ def create_iam_role_and_policies():
             iam.create_role(
                 RoleName=role_name,
                 AssumeRolePolicyDocument=json.dumps(trust_policy),
-                Description='Healthmate-CoachAI AgentCore Runtime Custom Role',
+                Description=f'Healthmate-CoachAI AgentCore Runtime Custom Role ({env} environment)',
                 MaxSessionDuration=3600
             )
             print(f"   ✅ IAMロール作成完了")
@@ -101,7 +123,8 @@ def create_iam_role_and_policies():
         print()
         print("✅ カスタムIAMロール作成完了！")
         print()
-        print("📋 作成されたリソース:")
+        print("� 作成されたプリソース:")
+        print(f"   🌍 環境: {env}")
         print(f"   🎭 ロール名: {role_name}")
         print(f"   🔗 ロールARN: {role_arn}")
         print()
@@ -112,6 +135,10 @@ def create_iam_role_and_policies():
         print("🚀 次のステップ:")
         print("   deploy_to_aws.sh を実行してエージェントをデプロイしてください")
         print(f"   このロールARNが自動的に使用されます: {role_arn}")
+        print()
+        print("💡 環境切り替え:")
+        print("   export HEALTHMATE_ENV=stage && python3 create_custom_iam_role.py")
+        print("   export HEALTHMATE_ENV=prod && python3 create_custom_iam_role.py")
         print()
         
         return role_arn

@@ -2,6 +2,7 @@
 Healthmate-CoachAI エージェント
 
 Amazon Bedrock AgentCore Runtime上で動作する健康支援AIエージェントです。
+環境別設定に対応しています。
 """
 
 import os
@@ -17,6 +18,27 @@ from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemory
 from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
 from healthmate_coach_ai.m2m_auth_config import M2MAuthConfig
 from fastapi.middleware.cors import CORSMiddleware
+
+# 環境設定モジュールのインポート
+from healthmate_coach_ai.environment.environment_manager import EnvironmentManager
+from healthmate_coach_ai.environment.configuration_provider import ConfigurationProvider
+from healthmate_coach_ai.environment.log_controller import LogController, safe_logging_setup
+
+# ログ設定の初期化（環境別）
+log_controller = safe_logging_setup("Healthmate-CoachAI")
+logger = log_controller.get_logger(__name__) if log_controller else None
+
+# 環境設定の初期化
+environment_manager = EnvironmentManager()
+config_provider = ConfigurationProvider("Healthmate-CoachAI")
+
+# 環境情報をログに出力
+if logger:
+    logger.info(f"CoachAI starting in {environment_manager.get_environment()} environment")
+    logger.info(f"AWS Region: {config_provider.get_aws_region()}")
+else:
+    print(f"CoachAI starting in {environment_manager.get_environment()} environment")
+    print(f"AWS Region: {config_provider.get_aws_region()}")
 
 # M2M認証用デコレータのインポート
 try:
@@ -236,7 +258,7 @@ async def health_manager_mcp(tool_name: str, arguments: dict) -> str:
 
 
 async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str):
-    """AgentCoreMemorySessionManagerを使用してHealthmate-CoachAIエージェントを作成"""
+    """AgentCoreMemorySessionManagerを使用してHealthmate-CoachAIエージェントを作成（環境別対応）"""
     
     # ユーザー情報を取得
     user_info = _get_user_info()
@@ -247,10 +269,12 @@ async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str)
     current_time = current_datetime.strftime("%H時%M分")
     current_weekday = ["月", "火", "水", "木", "金", "土", "日"][current_datetime.weekday()]
     
-    # 環境変数からメモリーIDを取得
+    # 環境変数からメモリーIDを取得（必須）
     memory_id = os.environ.get('BEDROCK_AGENTCORE_MEMORY_ID')
     if not memory_id:
-        raise Exception("環境変数 BEDROCK_AGENTCORE_MEMORY_ID が設定されていません")
+        raise Exception("環境変数 BEDROCK_AGENTCORE_MEMORY_ID が設定されていません。deploy_to_aws.shを使用してデプロイしてください。")
+    
+    print(f"🧠 使用するメモリID: {memory_id}")
     
     # セッションIDの長さを検証
     if len(session_id) < 33:

@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """
-テスト用設定ヘルパー
+テスト用設定ヘルパー（環境別設定対応）
 
 CloudFormationスタックから動的に設定を取得し、
 テストファイルで共通利用できるようにします。
+
+環境別設定対応:
+- HEALTHMATE_ENV環境変数に基づく環境別スタック名の自動解決
+- 環境別CloudFormationスタックからの設定取得
 """
 
 import boto3
 import json
+import os
 from botocore.exceptions import ClientError
 
 
@@ -18,21 +23,30 @@ class TestConfig:
         self._config = None
     
     def _get_stack_names(self) -> tuple:
-        """CloudFormationスタック名を取得"""
-        import os
-        core_stack = os.environ.get('CORE_STACK_NAME', 'Healthmate-CoreStack')
-        healthmanager_stack = os.environ.get('HEALTH_STACK_NAME', 'Healthmate-HealthManagerStack')
+        """CloudFormationスタック名を取得（環境別対応）"""
+        # HEALTHMATE_ENV環境変数の取得（デフォルト: dev）
+        environment = os.environ.get('HEALTHMATE_ENV', 'dev')
+        
+        # 有効な環境値の検証
+        if environment not in ['dev', 'stage', 'prod']:
+            print(f"❌ 無効な環境値: {environment}")
+            print("   有効な値: dev, stage, prod")
+            print("   デフォルトのdev環境を使用します")
+            environment = 'dev'
+        
+        # 環境別サフィックスの設定
+        env_suffix = "" if environment == "prod" else f"-{environment}"
+        
+        # 環境別スタック名の生成
+        core_stack = f'Healthmate-CoreStack{env_suffix}'
+        healthmanager_stack = f'Healthmate-HealthManagerStack{env_suffix}'
+        
         return core_stack, healthmanager_stack
     
     def _get_region(self) -> str:
-        """AWSリージョンを取得"""
-        import os
-        return (
-            os.environ.get('AWS_REGION') or 
-            os.environ.get('AWS_DEFAULT_REGION') or
-            boto3.Session().region_name or
-            'us-west-2'
-        )
+        """AWSリージョンを取得（us-west-2固定）"""
+        # Healthmateプロダクトはus-west-2リージョンを使用
+        return 'us-west-2'
     
     def _fetch_cloudformation_config(self) -> dict:
         """CloudFormationスタックから設定を取得"""
@@ -40,7 +54,10 @@ class TestConfig:
             core_stack, healthmanager_stack = self._get_stack_names()
             region = self._get_region()
             
+            # 環境情報を表示
+            environment = os.environ.get('HEALTHMATE_ENV', 'dev')
             print(f"CloudFormation設定取得中:")
+            print(f"  環境: {environment}")
             print(f"  Cognito設定: {core_stack}")
             print(f"  Gateway設定: {healthmanager_stack}")
             print(f"  リージョン: {region}")
@@ -123,12 +140,18 @@ test_config = TestConfig()
 
 
 if __name__ == "__main__":
-    """設定テスト用のメイン関数"""
+    """設定テスト用のメイン関数（環境別対応）"""
     try:
         print("🔧 テスト設定を確認中...")
+        
+        # 環境情報を表示
+        environment = os.environ.get('HEALTHMATE_ENV', 'dev')
+        print(f"🌍 環境: {environment}")
+        
         config = test_config.get_all_config()
         
         print("\n📋 取得した設定:")
+        print(f"   環境: {environment}")
         print(f"   リージョン: {config['region']}")
         print(f"   User Pool ID (Healthmate-Core): {config['user_pool_id']}")
         print(f"   Client ID (Healthmate-Core): {config['client_id']}")
