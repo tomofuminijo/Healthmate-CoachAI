@@ -10,6 +10,7 @@ import asyncio
 import httpx
 import json
 import base64
+import logging
 from datetime import datetime
 import pytz
 from strands import Agent, tool
@@ -26,19 +27,15 @@ from healthmate_coach_ai.environment.log_controller import LogController, safe_l
 
 # ログ設定の初期化（環境別）
 log_controller = safe_logging_setup("Healthmate-CoachAI")
-logger = log_controller.get_logger(__name__) if log_controller else None
+logger = log_controller.get_logger(__name__) if log_controller else logging.getLogger(__name__)
 
 # 環境設定の初期化
 environment_manager = EnvironmentManager()
 config_provider = ConfigurationProvider("Healthmate-CoachAI")
 
 # 環境情報をログに出力
-if logger:
-    logger.info(f"CoachAI starting in {environment_manager.get_environment()} environment")
-    logger.info(f"AWS Region: {config_provider.get_aws_region()}")
-else:
-    print(f"CoachAI starting in {environment_manager.get_environment()} environment")
-    print(f"AWS Region: {config_provider.get_aws_region()}")
+logger.info(f"CoachAI starting in {environment_manager.get_environment()} environment")
+logger.info(f"AWS Region: {config_provider.get_aws_region()}")
 
 # M2M認証用デコレータのインポート
 try:
@@ -274,7 +271,7 @@ async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str)
     if not memory_id:
         raise Exception("環境変数 BEDROCK_AGENTCORE_MEMORY_ID が設定されていません。deploy_to_aws.shを使用してデプロイしてください。")
     
-    print(f"🧠 使用するメモリID: {memory_id}")
+    logger.debug(f"使用するメモリID: {memory_id}")
     
     # セッションIDの長さを検証
     if len(session_id) < 33:
@@ -361,10 +358,8 @@ async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str)
         raise Exception("環境変数 HEALTHMATE_AI_MODEL が設定されていません")
     
     # 使用するモデルをログに出力
-    print(f"🤖 システムプロンプト: {system_prompt}")
-    
-    # 使用するモデルをログに出力
-    print(f"🤖 使用AIモデル: {model_id}")
+    logger.debug(f"システムプロンプト設定完了")
+    logger.info(f"使用AIモデル: {model_id}")
     
     # Strandsエージェントを作成（メモリ統合付き）
     return Agent(
@@ -460,8 +455,8 @@ app.add_middleware(
 async def invoke(payload, context):
     """Healthmate-CoachAI のエントリーポイント"""
     
-    print(f"DEBUG: app.entrypoint payload: {payload}")
-    print(f"DEBUG: app.entrypoint context: {context}")
+    logger.debug(f"app.entrypoint payload: {payload}")
+    logger.debug(f"app.entrypoint context: {context}")
 
     # ペイロードからデータを抽出
     prompt = payload.get("prompt", "")
