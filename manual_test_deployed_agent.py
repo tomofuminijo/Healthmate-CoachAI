@@ -381,10 +381,8 @@ class DeployedAgentTestSession:
                 "prompt": query,
                 "sessionState": {
                     "sessionAttributes": {
-                        "jwt_token": self.jwt_token,
                         "timezone": TEST_TIMEZONE,
-                        "language": TEST_LANGUAGE,
-                        "session_id": session_id
+                        "language": TEST_LANGUAGE
                     }
                 }
             }

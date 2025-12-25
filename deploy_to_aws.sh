@@ -26,6 +26,30 @@ setup_environment_config() {
             ;;
     esac
     
+    # ログレベル設定
+    if [ -n "$HEALTHMATE_LOG_LEVEL" ]; then
+        # HEALTHMATE_LOG_LEVEL環境変数が設定されている場合はその値を使用
+        LOG_LEVEL="$HEALTHMATE_LOG_LEVEL"
+        echo "🔧 ログレベル: $LOG_LEVEL (環境変数から設定)"
+    else
+        # HEALTHMATE_LOG_LEVEL環境変数が未設定の場合は、HEALTHMATE_ENVに基づいて自動設定
+        case "$HEALTHMATE_ENV" in
+            dev)
+                LOG_LEVEL="DEBUG"
+                ;;
+            stage)
+                LOG_LEVEL="WARNING"
+                ;;
+            prod)
+                LOG_LEVEL="INFO"
+                ;;
+            *)
+                LOG_LEVEL="INFO"
+                ;;
+        esac
+        echo "🔧 ログレベル: $LOG_LEVEL (環境 $HEALTHMATE_ENV に基づいて自動設定)"
+    fi
+    
     # 環境別サフィックスの設定
     if [ "$HEALTHMATE_ENV" = "prod" ]; then
         ENV_SUFFIX=""
@@ -35,6 +59,7 @@ setup_environment_config() {
     
     echo "📋 環境設定:"
     echo "   🌍 環境: $HEALTHMATE_ENV"
+    echo "   📊 ログレベル: $LOG_LEVEL"
     echo "   🏷️  サフィックス: $ENV_SUFFIX"
 }
 
@@ -248,6 +273,7 @@ echo "   ✅ HEALTHMANAGER_GATEWAY_ID: $GATEWAY_ID"
 echo "   ✅ AWS_REGION: $AWS_REGION"
 echo "   ✅ HEALTHMATE_AI_MODEL: $HEALTHMATE_AI_MODEL"
 echo "   ✅ HEALTHMATE_ENV: $HEALTHMATE_ENV"
+echo "   ✅ HEALTHMATE_LOG_LEVEL: $LOG_LEVEL"
 echo "   ✅ AGENTCORE_PROVIDER_NAME: $PROVIDER_NAME"
 
 # AgentCore デプロイを実行（環境変数追加）
@@ -258,6 +284,7 @@ agentcore launch \
     --env AWS_REGION="$AWS_REGION" \
     --env HEALTHMATE_AI_MODEL="$HEALTHMATE_AI_MODEL" \
     --env HEALTHMATE_ENV="$HEALTHMATE_ENV" \
+    --env HEALTHMATE_LOG_LEVEL="$LOG_LEVEL" \
     --env AGENTCORE_PROVIDER_NAME="$PROVIDER_NAME"
 
 echo ""
@@ -271,6 +298,7 @@ echo "   🌍 環境: $HEALTHMATE_ENV"
 echo "   🔐 認証方式: JWT (Cognito)"
 echo "   🔑 JWT Discovery URL: $JWT_DISCOVERY_URL"
 echo "   🤖 AIモデル: $HEALTHMATE_AI_MODEL"
+echo "   � ロログレベル: $LOG_LEVEL"
 echo "   🔗 プロバイダー名: $PROVIDER_NAME"
 echo ""
 echo "🚀 次のステップ:"
@@ -284,4 +312,8 @@ echo "   export HEALTHMATE_ENV=prod && ./deploy_to_aws.sh"
 echo ""
 echo "💡 モデル変更方法:"
 echo "   export HEALTHMATE_AI_MODEL=\"新しいモデル名\" && ./deploy_to_aws.sh"
+echo ""
+echo "💡 ログレベル変更方法:"
+echo "   export HEALTHMATE_LOG_LEVEL=DEBUG && ./deploy_to_aws.sh"
+echo "   export HEALTHMATE_LOG_LEVEL=WARNING && ./deploy_to_aws.sh"
 echo ""

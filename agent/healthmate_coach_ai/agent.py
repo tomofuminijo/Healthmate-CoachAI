@@ -22,27 +22,44 @@ from healthmate_coach_ai.m2m_auth_config import M2MAuthConfig
 from fastapi.middleware.cors import CORSMiddleware
 
 
-# ログ設定
+# EHALTHMATE_ENV 取得
 env = os.environ.get('HEALTHMATE_ENV', 'dev').lower()
-if env == 'prod':
-    log_level = 'WARNING'
-elif env == 'stage':
-    log_level = 'INFO'
-else:  # dev
-    log_level = 'DEBUG'
+
+# ログ設定
+log_level_env = os.environ.get('HEALTHMATE_LOG_LEVEL', '').upper()
+if log_level_env == 'DEBUG':
+    log_level = logging.DEBUG
+elif log_level_env == 'INFO':
+    log_level = logging.INFO
+elif log_level_env == 'WARNING':
+    log_level = logging.WARNING
+elif log_level_env == 'ERROR':
+    log_level = logging.ERROR
+else:
+    # HEALTHMATE_LOG_LEVELが未設定または無効な場合のフォールバック
+    if env == 'prod':
+        log_level = logging.WARNING
+    elif env == 'stage':
+        log_level = logging.INFO
+    else:  # dev
+        log_level = logging.DEBUG
 
 # ロガーの初期化
 logger = logging.getLogger('HealthCoachAI')
-logger.setLevel(getattr(logging, log_level.upper()))
+logger.setLevel(log_level)
 
 # 標準出力へのハンドラを追加（これがCloudWatch Logsに転送されます）
 handler = logging.StreamHandler(sys.stdout)
 handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logger.addHandler(handler)
 
+logger.propagate = False
+
 # 環境情報をログに出力
 logger.info(f"CoachAI starting in {env} environment")
+logger.info(f"log_level: {logging.getLevelName(log_level)}")
 logger.info(f"AWS Region: {os.environ.get('AWS_REGION', 'us-west-2')}")
+
 
 # M2M認証用デコレータのインポート
 try:
@@ -478,7 +495,7 @@ async def invoke(payload, context):
 
     # 必須フィールドを抽出
     jwt_token_from_context = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else auth_header
-    session_id_from_payload = session_attrs.get("session_id")
+    session_id_from_context = context.session_id
     timezone_from_payload = session_attrs.get("timezone", "Asia/Tokyo")
     language_from_payload = session_attrs.get("language", "ja")
     
@@ -487,7 +504,7 @@ async def invoke(payload, context):
         yield {"event": {"contentBlockDelta": {"delta": {"text": "エラー: JWT認証トークンが必要です。"}}}}
         return
     
-    if not session_id_from_payload or len(session_id_from_payload) < 33:
+    if not session_id_from_context or len(session_id_from_context) < 33:
         yield {"event": {"contentBlockDelta": {"delta": {"text": "エラー: 有効なセッションIDが必要です（33文字以上）。"}}}}
         return
     
@@ -514,7 +531,7 @@ async def invoke(payload, context):
     
     try:
         # HealthCoachAIを呼び出し、ストリーミングレスポンスを処理
-        response_task = asyncio.create_task(invoke_health_coach(prompt, session_id_from_payload, actor_id, queue))
+        response_task = asyncio.create_task(invoke_health_coach(prompt, session_id_from_context, actor_id, queue))
         
         # イベント処理ループ
         while True:
