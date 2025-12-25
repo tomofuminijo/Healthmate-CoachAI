@@ -425,7 +425,6 @@ payload = {
     "prompt": "こんにちは！今日の健康状態はいかがですか？",
     "sessionState": {
         "sessionAttributes": {
-            "session_id": session_id,
             "timezone": "Asia/Tokyo",
             "language": "ja"
         }
@@ -475,7 +474,6 @@ const payload = {
     prompt: "こんにちは！今日の健康状態はいかがですか？",
     sessionState: {
         sessionAttributes: {
-            session_id: sessionId,
             timezone: "Asia/Tokyo",
             language: "ja"
         }
@@ -555,7 +553,6 @@ class HealthCoachClient:
             "prompt": message,
             "sessionState": {
                 "sessionAttributes": {
-                    "session_id": session_id,
                     "timezone": timezone,
                     "language": language
                 }
@@ -683,7 +680,6 @@ HealthmateUI サービスから送信される最適化されたペイロード�
   "prompt": "ユーザーからのメッセージ",
   "sessionState": {
     "sessionAttributes": {
-      "session_id": "healthmate-chat-1234567890-abcdef",
       "timezone": "Asia/Tokyo",
       "language": "ja"
     }
@@ -691,9 +687,10 @@ HealthmateUI サービスから送信される最適化されたペイロード�
 }
 ```
 
-**注意**: JWT トークンは Authorization ヘッダーで送信されます：
+**重要な変更**: session_id は payload から削除され、ヘッダーのみで送信されます：
 ```http
 Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+X-Amzn-Bedrock-AgentCore-Runtime-Session-Id: healthmate-chat-1234567890-abcdef
 ```
 
 ### ペイロード要素の説明
@@ -701,15 +698,15 @@ Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 | フィールド | 必須 | 説明 |
 |-----------|------|------|
 | `prompt` | ✅ | ユーザーからのメッセージ |
-| `sessionState.sessionAttributes.session_id` | ✅ | セッション継続性のためのID（33文字以上） |
 | `sessionState.sessionAttributes.timezone` | ⚪ | ユーザーのタイムゾーン（デフォルト: "Asia/Tokyo"） |
 | `sessionState.sessionAttributes.language` | ⚪ | ユーザーの言語設定（デフォルト: "ja"） |
 
-### 認証ヘッダー
+### 認証・セッションヘッダー
 
 | ヘッダー | 必須 | 説明 |
 |---------|------|------|
 | `Authorization` | ✅ | Cognito JWT Access Token（Bearer形式、user_id抽出用） |
+| `X-Amzn-Bedrock-AgentCore-Runtime-Session-Id` | ✅ | セッション継続性のためのID（33文字以上） |
 
 ### 認証アーキテクチャ
 
@@ -1035,8 +1032,6 @@ JWT認証統合後の呼び出しフロー：
        "prompt": user_message,
        "sessionState": {
            "sessionAttributes": {
-               "session_id": session_id,
-               "jwt_token": access_token,
                "timezone": "Asia/Tokyo",
                "language": "ja"
            }
