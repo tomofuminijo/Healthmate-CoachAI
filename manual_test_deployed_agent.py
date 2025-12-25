@@ -69,10 +69,12 @@ ENV_CONFIG = get_environment_config()
 # タイムゾーン設定
 # 例: 'Asia/Tokyo', 'America/New_York', 'Europe/London', 'America/Los_Angeles'
 TEST_TIMEZONE = 'Asia/Tokyo'
+#TEST_TIMEZONE = 'America/New_York'
 
 # 言語設定  
 # 例: 'ja', 'en', 'en-us', 'zh', 'ko', 'es', 'fr', 'de'
 TEST_LANGUAGE = 'ja'
+#TEST_LANGUAGE = 'en'
 
 # ========================================
 
