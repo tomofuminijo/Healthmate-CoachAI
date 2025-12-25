@@ -10,6 +10,33 @@ Healthmate-CoachAIは、ユーザーの健康目標達成を支援するAIエー
 - 健康目標の設定と進捗追跤
 - 運動や食事に関する実践的な指導
 - モチベーション維持のためのサポート
+- Dev/Stage/Prod環境での一貫した動作
+
+## 🌍 環境設定
+
+### 対応環境
+
+Healthmate-CoachAI は以下の3つの環境をサポートします：
+
+- **dev**: 開発環境（デフォルト）- DEBUGログレベル
+- **stage**: ステージング環境 - INFOログレベル
+- **prod**: 本番環境 - WARNINGログレベル
+
+### 環境変数
+
+| 変数名 | 説明 | デフォルト値 | 例 |
+|--------|------|-------------|-----|
+| `HEALTHMATE_ENV` | デプロイ環境 | `dev` | `dev`, `stage`, `prod` |
+| `AWS_REGION` | AWSリージョン | `us-west-2` | `us-west-2` |
+| `HEALTHMATE_AI_MODEL` | 使用するAIモデル | Claude Sonnet 4.5 | モデルARN |
+
+### 環境別リソース命名
+
+| 環境 | IAMロール名 | Memory ID | Agent名 |
+|------|------------|-----------|---------|
+| dev | `Healthmate-CoachAI-AgentCore-Runtime-Role-dev` | `healthmate_coach_ai_mem-dev-xxxxx` | `healthmate_coach_ai-dev` |
+| stage | `Healthmate-CoachAI-AgentCore-Runtime-Role-stage` | `healthmate_coach_ai_mem-stage-xxxxx` | `healthmate_coach_ai-stage` |
+| prod | `Healthmate-CoachAI-AgentCore-Runtime-Role` | `healthmate_coach_ai_mem-xxxxx` | `healthmate_coach_ai` |
 
 ## 主な機能
 
@@ -93,11 +120,21 @@ export HEALTHMATE_AI_MODEL="global.anthropic.claude-sonnet-4-5-20250929-v1:0"
 ### 3. ワンコマンドデプロイ
 
 ```bash
-# JWT認証設定 + カスタムIAMロール自動作成 + デプロイ
+# 開発環境（デフォルト）
+export HEALTHMATE_ENV=dev
+./deploy_to_aws.sh
+
+# ステージング環境
+export HEALTHMATE_ENV=stage
+./deploy_to_aws.sh
+
+# 本番環境
+export HEALTHMATE_ENV=prod
 ./deploy_to_aws.sh
 
 # 異なるAIモデルを使用する場合
 export HEALTHMATE_AI_MODEL="global.anthropic.claude-3-5-sonnet-20241022-v2:0"
+export HEALTHMATE_ENV=stage
 ./deploy_to_aws.sh
 ```
 
@@ -255,6 +292,9 @@ python create_custom_iam_role.py
 ### 環境変数設定（オプション）
 
 ```bash
+# 環境設定
+export HEALTHMATE_ENV=dev  # dev, stage, prod
+
 # CloudFormationスタック名のカスタマイズ
 export CORE_STACK_NAME="Custom-Healthmate-CoreStack"
 export HEALTH_STACK_NAME="Custom-Healthmate-HealthManagerStack"
@@ -268,6 +308,19 @@ export HEALTHMATE_AI_MODEL="global.anthropic.claude-sonnet-4-5-20250929-v1:0"
 # 利用可能なモデル例:
 # export HEALTHMATE_AI_MODEL="global.anthropic.claude-3-5-sonnet-20241022-v2:0"
 # export HEALTHMATE_AI_MODEL="global.anthropic.claude-3-5-haiku-20241022-v1:0"
+```
+
+### 環境設定の確認
+
+```bash
+# 現在の環境設定を確認
+python test_environment_config.py
+
+# 環境別デプロイ状態確認
+python check_deployment_status.py
+
+# AgentCore状態確認
+agentcore status
 ```
 
 ## 🧪 開発・テスト
