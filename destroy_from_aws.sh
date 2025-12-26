@@ -238,7 +238,7 @@ if [ -n "$AGENT_RUNTIME_ID" ]; then
     
     # CodeBuildプロジェクトの削除
     echo "   CodeBuildプロジェクトを確認中..."
-    CODEBUILD_PROJECT_NAME="bedrock-agentcore-${AGENT_NAME}"
+    CODEBUILD_PROJECT_NAME="bedrock-agentcore-${AGENT_NAME}-builder"
     if aws codebuild batch-get-projects --names "$CODEBUILD_PROJECT_NAME" --region "$AWS_DEFAULT_REGION" &>/dev/null; then
         echo "   CodeBuildプロジェクト '$CODEBUILD_PROJECT_NAME' を削除中..."
         aws codebuild delete-project --name "$CODEBUILD_PROJECT_NAME" --region "$AWS_DEFAULT_REGION" 2>/dev/null
@@ -344,6 +344,22 @@ else
     echo "   メモリリソースを削除したい場合は、DEV環境で実行してください。"
 fi
 
+echo ""
+echo "🧹 最終クリーンアップ中..."
+
+# .bedrock_agentcore.yaml ファイルがあれば削除
+if [ -f ".bedrock_agentcore.yaml" ]; then
+    echo "   ローカル設定ファイルを削除中..."
+    rm -f .bedrock_agentcore.yaml
+    echo "   ✅ .bedrock_agentcore.yaml を削除しました"
+fi
+
+# .bedrock_agentcore ディレクトリがあれば削除
+if [ -d ".bedrock_agentcore" ]; then
+    echo "   ローカルキャッシュディレクトリを削除中..."
+    rm -rf .bedrock_agentcore
+    echo "   ✅ .bedrock_agentcore ディレクトリを削除しました"
+fi
 
 echo ""
 echo "🎉 HealthCoachAI エージェント (環境: $HEALTHMATE_ENV) のアンデプロイが完了しました！"
@@ -359,6 +375,7 @@ if [ "$HEALTHMATE_ENV" = "dev" ]; then
 else
     echo "   ⚪ メモリリソース (${HEALTHMATE_ENV}環境のため保持)"
 fi
+echo "   ✅ ローカル設定ファイル"
 echo "   ✅ ローカルキャッシュディレクトリ"
 echo ""
 echo "💰 これで関連するAWSコストは発生しなくなります。"
