@@ -5,8 +5,45 @@
 
 set -e  # エラー時に停止
 
+# コマンドライン引数の解析
+FORCE_DELETE=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --force|-f)
+            FORCE_DELETE=true
+            shift
+            ;;
+        --help|-h)
+            echo "使用方法: $0 [OPTIONS]"
+            echo ""
+            echo "オプション:"
+            echo "  --force, -f    確認をスキップして強制削除"
+            echo "  --help, -h     このヘルプを表示"
+            echo ""
+            echo "環境変数:"
+            echo "  HEALTHMATE_ENV    環境設定 (dev, stage, prod) デフォルト: dev"
+            echo "  AWS_REGION        AWSリージョン デフォルト: us-west-2"
+            echo ""
+            echo "例:"
+            echo "  $0                    # 通常の削除（確認あり）"
+            echo "  $0 --force            # 強制削除（確認なし）"
+            echo "  HEALTHMATE_ENV=stage $0 --force  # stage環境を強制削除"
+            exit 0
+            ;;
+        *)
+            echo "❌ 不明なオプション: $1"
+            echo "ヘルプを表示するには --help を使用してください"
+            exit 1
+            ;;
+    esac
+done
+
 echo "🗑️  Healthmate-CoachAI エージェントをAWSからアンデプロイします（環境別設定対応）"
 echo "================================================================================"
+
+if [ "$FORCE_DELETE" = true ]; then
+    echo "🚨 --force フラグが指定されているため、すべての確認をスキップします"
+fi
 
 # 環境設定の初期化
 setup_environment_config() {
@@ -77,35 +114,64 @@ else
     echo "⚠️  仮想環境が見つかりません。グローバル環境を使用します。"
 fi
 
-# bedrock-agentcoreがインストールされているか確認
-if ! command -v agentcore &> /dev/null; then
-    echo "❌ agentcore コマンドが見つかりません。"
+# bedrock-agentcore-controlがインストールされているか確認
+if ! command -v aws &> /dev/null; then
+    echo "❌ aws CLI が見つかりません。"
     echo "   以下のコマンドでインストールしてください:"
-    echo "   pip install bedrock-agentcore"
+    echo "   https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
     exit 1
 fi
 
-# 設定ファイルの存在確認
-if [ ! -f ".bedrock_agentcore.yaml" ]; then
-    echo "⚠️  .bedrock_agentcore.yaml が見つかりません。"
-    echo "   エージェントは既にアンデプロイされている可能性があります。"
-    echo ""
-    echo "🔍 メモリリソースのみ確認します..."
-else
-    echo ""
-    echo "🔍 現在のデプロイ状況を確認中..."
+# bedrock-agentcore-control プラグインの確認
+if ! aws bedrock-agentcore-control help &> /dev/null; then
+    echo "❌ aws bedrock-agentcore-control プラグインが見つかりません。"
+    echo "   以下のコマンドでインストールしてください:"
+    echo "   pip install bedrock-agentcore-starter-toolkit"
+    exit 1
+fi
+
+# Agent Runtimeの存在確認
+echo ""
+echo "🔍 現在のデプロイ状況を確認中..."
+
+# 環境別エージェント名を生成
+AGENT_NAME="healthmate_coach_ai"
+if [ "$HEALTHMATE_ENV" != "prod" ]; then
+    AGENT_NAME="${AGENT_NAME}_${HEALTHMATE_ENV}"
+fi
+
+echo "   検索対象エージェント名: $AGENT_NAME"
+
+# AWS上のAgent Runtimeリストを取得してRuntime IDを検索
+echo "   Agent Runtimeリストを取得中..."
+AGENT_RUNTIME_JSON=$(aws bedrock-agentcore-control list-agent-runtimes --region "$AWS_DEFAULT_REGION" 2>/dev/null || echo '{"agentRuntimes":[]}')
+
+# jqを使用してエージェント名に一致するRuntime IDを取得
+AGENT_RUNTIME_ID=$(echo "$AGENT_RUNTIME_JSON" | jq -r --arg name "$AGENT_NAME" '.agentRuntimes[] | select(.agentRuntimeName == $name) | .agentRuntimeId' 2>/dev/null || echo "")
+
+# 対象のAgent Runtimeが存在するかチェック
+if [ -n "$AGENT_RUNTIME_ID" ]; then
+    echo "✅ Agent Runtime '$AGENT_NAME' が見つかりました。"
+    echo "   Runtime ID: $AGENT_RUNTIME_ID"
     
-    # 現在の状況を表示（エラーを無視）
-    agentcore status 2>/dev/null || echo "   エージェントは既に削除されているか、設定に問題があります。"
+    # Agent Runtimeの詳細情報を取得
+    echo "   Agent Runtime詳細情報を取得中..."
+    AGENT_RUNTIME_INFO=$(aws bedrock-agentcore-control get-agent-runtime --agent-runtime-id "$AGENT_RUNTIME_ID" --region "$AWS_DEFAULT_REGION" 2>/dev/null || echo "{}")
+    
+    if [ "$AGENT_RUNTIME_INFO" != "{}" ]; then
+        AGENT_STATUS=$(echo "$AGENT_RUNTIME_INFO" | jq -r '.status // "UNKNOWN"' 2>/dev/null || echo "UNKNOWN")
+        echo "   ステータス: $AGENT_STATUS"
+    else
+        echo "   ⚠️  Agent Runtime詳細情報の取得に失敗しました"
+    fi
     
     echo ""
     echo "⚠️  以下のリソースが削除されます:"
-    echo "   - AgentCore エージェント (環境: $HEALTHMATE_ENV)"
+    echo "   - AgentCore エージェント '$AGENT_NAME' (環境: $HEALTHMATE_ENV)"
     echo "   - ECR リポジトリ（全イメージ含む）"
     echo "   - CodeBuild プロジェクト"
     echo "   - IAM ロール (Healthmate-CoachAI-AgentCore-Runtime-Role${ENV_SUFFIX})"
     echo "   - S3 アーティファクト"
-    echo "   - ローカル設定ファイル"
     if [ "$HEALTHMATE_ENV" = "dev" ]; then
         echo "   - メモリリソース (DEV環境のため削除)"
     else
@@ -114,8 +180,14 @@ else
     echo ""
     echo "🚨 この操作は取り消せません！"
     echo ""
-    echo "本当にHealthCoachAIエージェント (環境: $HEALTHMATE_ENV) を削除しますか？ (y/N)"
-    read -r response
+    
+    if [ "$FORCE_DELETE" = true ]; then
+        echo "🚨 --force フラグにより確認をスキップして削除を実行します"
+        response="y"
+    else
+        echo "本当にHealthCoachAIエージェント (環境: $HEALTHMATE_ENV) を削除しますか？ (y/N)"
+        read -r response
+    fi
     
     if [[ ! "$response" =~ ^[Yy]$ ]]; then
         echo "❌ アンデプロイをキャンセルしました。"
@@ -125,14 +197,109 @@ else
     echo ""
     echo "🗑️  AgentCore リソースを削除中..."
     
-    # AgentCore リソースを削除（ECRリポジトリも含む）
-    agentcore destroy --delete-ecr-repo --force
+    # AWS CLIを使用してAgent Runtimeを直接削除
+    echo "   Agent Runtime '$AGENT_NAME' (ID: $AGENT_RUNTIME_ID) を削除中..."
+    aws bedrock-agentcore-control delete-agent-runtime --agent-runtime-id "$AGENT_RUNTIME_ID" --region "$AWS_DEFAULT_REGION" 2>/dev/null
     
     if [ $? -eq 0 ]; then
-        echo "✅ AgentCore リソース削除完了"
+        echo "✅ Agent Runtime削除完了"
     else
-        echo "⚠️  AgentCore リソース削除で一部エラーが発生しましたが、続行します。"
+        echo "⚠️  Agent Runtime削除で一部エラーが発生しましたが、続行します。"
     fi
+    
+    # ECRリポジトリの削除
+    echo "   ECRリポジトリを確認中..."
+    ECR_REPO_NAME="bedrock-agentcore-${AGENT_NAME}"
+    echo "   検索対象ECRリポジトリ名: $ECR_REPO_NAME"
+    
+    if aws ecr describe-repositories --repository-names "$ECR_REPO_NAME" --region "$AWS_DEFAULT_REGION" &>/dev/null; then
+        echo "   ECRリポジトリ '$ECR_REPO_NAME' を削除中..."
+        aws ecr delete-repository --repository-name "$ECR_REPO_NAME" --region "$AWS_DEFAULT_REGION" --force 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo "   ✅ ECRリポジトリ削除完了"
+        else
+            echo "   ⚠️  ECRリポジトリ削除に失敗しました"
+        fi
+    else
+        echo "   ℹ️  ECRリポジトリ '$ECR_REPO_NAME' は見つかりませんでした"
+        
+        # デバッグ用：利用可能なECRリポジトリを表示
+        echo "   🔍 利用可能なECRリポジトリを確認中..."
+        AVAILABLE_REPOS=$(aws ecr describe-repositories --region "$AWS_DEFAULT_REGION" --query "repositories[?contains(repositoryName, 'bedrock-agentcore')].repositoryName" --output text 2>/dev/null || echo "")
+        if [ -n "$AVAILABLE_REPOS" ]; then
+            echo "   利用可能なbedrock-agentcore関連リポジトリ:"
+            for repo in $AVAILABLE_REPOS; do
+                echo "     - $repo"
+            done
+        else
+            echo "   bedrock-agentcore関連のリポジトリは見つかりませんでした"
+        fi
+    fi
+    
+    # CodeBuildプロジェクトの削除
+    echo "   CodeBuildプロジェクトを確認中..."
+    CODEBUILD_PROJECT_NAME="bedrock-agentcore-${AGENT_NAME}"
+    if aws codebuild batch-get-projects --names "$CODEBUILD_PROJECT_NAME" --region "$AWS_DEFAULT_REGION" &>/dev/null; then
+        echo "   CodeBuildプロジェクト '$CODEBUILD_PROJECT_NAME' を削除中..."
+        aws codebuild delete-project --name "$CODEBUILD_PROJECT_NAME" --region "$AWS_DEFAULT_REGION" 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo "   ✅ CodeBuildプロジェクト削除完了"
+        else
+            echo "   ⚠️  CodeBuildプロジェクト削除に失敗しました"
+        fi
+    else
+        echo "   ℹ️  CodeBuildプロジェクトは見つかりませんでした"
+    fi
+    
+    # IAMロールの削除
+    echo "   IAMロールを確認中..."
+    IAM_ROLE_NAME="Healthmate-CoachAI-AgentCore-Runtime-Role${ENV_SUFFIX}"
+    if aws iam get-role --role-name "$IAM_ROLE_NAME" &>/dev/null; then
+        echo "   IAMロール '$IAM_ROLE_NAME' を削除中..."
+        # ロールにアタッチされたポリシーを削除
+        ATTACHED_POLICIES=$(aws iam list-attached-role-policies --role-name "$IAM_ROLE_NAME" --query 'AttachedPolicies[*].PolicyArn' --output text 2>/dev/null || echo "")
+        if [ -n "$ATTACHED_POLICIES" ]; then
+            for policy_arn in $ATTACHED_POLICIES; do
+                aws iam detach-role-policy --role-name "$IAM_ROLE_NAME" --policy-arn "$policy_arn" 2>/dev/null
+            done
+        fi
+        # インラインポリシーを削除
+        INLINE_POLICIES=$(aws iam list-role-policies --role-name "$IAM_ROLE_NAME" --query 'PolicyNames[*]' --output text 2>/dev/null || echo "")
+        if [ -n "$INLINE_POLICIES" ]; then
+            for policy_name in $INLINE_POLICIES; do
+                aws iam delete-role-policy --role-name "$IAM_ROLE_NAME" --policy-name "$policy_name" 2>/dev/null
+            done
+        fi
+        # ロールを削除
+        aws iam delete-role --role-name "$IAM_ROLE_NAME" 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo "   ✅ IAMロール削除完了"
+        else
+            echo "   ⚠️  IAMロール削除に失敗しました"
+        fi
+    else
+        echo "   ℹ️  IAMロールは見つかりませんでした"
+    fi
+    
+else
+    echo "ℹ️  Agent Runtime '$AGENT_NAME' は見つかりませんでした。"
+    echo "   エージェントは既にアンデプロイされている可能性があります。"
+    echo ""
+    echo "🔍 利用可能なAgent Runtimeを表示します..."
+    
+    # デバッグ用：利用可能なAgent Runtimeを表示
+    AVAILABLE_RUNTIMES=$(echo "$AGENT_RUNTIME_JSON" | jq -r '.agentRuntimes[]? | "\(.agentRuntimeName) (ID: \(.agentRuntimeId))"' 2>/dev/null || echo "なし")
+    if [ "$AVAILABLE_RUNTIMES" != "なし" ] && [ -n "$AVAILABLE_RUNTIMES" ]; then
+        echo "   利用可能なAgent Runtime:"
+        echo "$AVAILABLE_RUNTIMES" | while read -r line; do
+            echo "     - $line"
+        done
+    else
+        echo "   利用可能なAgent Runtimeはありません。"
+    fi
+    
+    echo ""
+    echo "🔍 メモリリソースのみ確認します..."
 fi
 
 echo ""
@@ -152,7 +319,7 @@ if [ "$HEALTHMATE_ENV" = "dev" ]; then
     echo "   検索対象メモリIDプレフィックス: $MEMORY_ID_PREFIX"
     
     # メモリリソースの確認と削除
-    MEMORY_LIST=$(AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION aws bedrock-agentcore-control list-memories --query "memories[*].id" --output text 2>/dev/null || echo "[]")
+    MEMORY_LIST=$(aws bedrock-agentcore-control list-memories --region "$AWS_DEFAULT_REGION" --query "memories[*].id" --output text 2>/dev/null || echo "[]")
     
     if echo "$MEMORY_LIST" | grep -q "$MEMORY_ID_PREFIX"; then
         echo "🔍 Healthmate-CoachAI関連のメモリリソースが見つかりました。削除中..."
@@ -163,7 +330,7 @@ if [ "$HEALTHMATE_ENV" = "dev" ]; then
         if [ -n "$MEMORY_IDS" ]; then
             for MEMORY_ID in $MEMORY_IDS; do
                 echo "   削除中: $MEMORY_ID"
-                AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION agentcore memory delete "$MEMORY_ID" 2>/dev/null || echo "   ⚠️  $MEMORY_ID の削除に失敗しました（既に削除済みの可能性）"
+                aws bedrock-agentcore-control delete-memory --memory-id "$MEMORY_ID" --region "$AWS_DEFAULT_REGION" 2>/dev/null || echo "   ⚠️  $MEMORY_ID の削除に失敗しました（既に削除済みの可能性）"
             done
             echo "✅ メモリリソース削除完了"
         else
@@ -177,28 +344,12 @@ else
     echo "   メモリリソースを削除したい場合は、DEV環境で実行してください。"
 fi
 
-echo ""
-echo "🧹 最終クリーンアップ中..."
-
-# 残存する設定ファイルがあれば削除
-if [ -f ".bedrock_agentcore.yaml" ]; then
-    echo "   ローカル設定ファイルを削除中..."
-    rm -f .bedrock_agentcore.yaml
-    echo "   ✅ .bedrock_agentcore.yaml を削除しました"
-fi
-
-# .bedrock_agentcore ディレクトリがあれば削除
-if [ -d ".bedrock_agentcore" ]; then
-    echo "   ローカルキャッシュディレクトリを削除中..."
-    rm -rf .bedrock_agentcore
-    echo "   ✅ .bedrock_agentcore ディレクトリを削除しました"
-fi
 
 echo ""
 echo "🎉 HealthCoachAI エージェント (環境: $HEALTHMATE_ENV) のアンデプロイが完了しました！"
 echo ""
 echo "📋 削除されたリソース:"
-echo "   ✅ AgentCore エージェント (環境: $HEALTHMATE_ENV)"
+echo "   ✅ AgentCore エージェント '$AGENT_NAME' (環境: $HEALTHMATE_ENV)"
 echo "   ✅ ECR リポジトリ（全イメージ）"
 echo "   ✅ CodeBuild プロジェクト"
 echo "   ✅ IAM ロール (Healthmate-CoachAI-AgentCore-Runtime-Role${ENV_SUFFIX})"
@@ -208,7 +359,7 @@ if [ "$HEALTHMATE_ENV" = "dev" ]; then
 else
     echo "   ⚪ メモリリソース (${HEALTHMATE_ENV}環境のため保持)"
 fi
-echo "   ✅ ローカル設定ファイル"
+echo "   ✅ ローカルキャッシュディレクトリ"
 echo ""
 echo "💰 これで関連するAWSコストは発生しなくなります。"
 echo ""
