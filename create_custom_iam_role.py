@@ -25,7 +25,7 @@ def get_environment_config():
         env = 'dev'
     
     # 環境別サフィックスの設定
-    env_suffix = "" if env == "prod" else f"-{env}"
+    env_suffix = f"-{env}"
     
     return env, env_suffix
 

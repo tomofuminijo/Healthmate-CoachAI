@@ -64,11 +64,7 @@ setup_environment_config() {
     esac
     
     # 環境別サフィックスの設定
-    if [ "$HEALTHMATE_ENV" = "prod" ]; then
-        ENV_SUFFIX=""
-    else
-        ENV_SUFFIX="-${HEALTHMATE_ENV}"
-    fi
+    ENV_SUFFIX="-${HEALTHMATE_ENV}"
     
     echo "📋 環境設定:"
     echo "   🌍 環境: $HEALTHMATE_ENV"
@@ -135,10 +131,7 @@ echo ""
 echo "🔍 現在のデプロイ状況を確認中..."
 
 # 環境別エージェント名を生成
-AGENT_NAME="healthmate_coach_ai"
-if [ "$HEALTHMATE_ENV" != "prod" ]; then
-    AGENT_NAME="${AGENT_NAME}_${HEALTHMATE_ENV}"
-fi
+AGENT_NAME="healthmate_coach_ai_${HEALTHMATE_ENV}"
 
 echo "   検索対象エージェント名: $AGENT_NAME"
 
@@ -310,10 +303,7 @@ if [ "$HEALTHMATE_ENV" = "dev" ]; then
     echo "🔍 DEV環境のため、メモリリソースを削除します..."
     
     # 環境別メモリID名を生成
-    AGENT_NAME="healthmate_coach_ai"
-    if [ "$HEALTHMATE_ENV" != "prod" ]; then
-        AGENT_NAME="${AGENT_NAME}_${HEALTHMATE_ENV}"
-    fi
+    AGENT_NAME="healthmate_coach_ai_${HEALTHMATE_ENV}"
     MEMORY_ID_PREFIX="${AGENT_NAME}_mem"
     
     echo "   検索対象メモリIDプレフィックス: $MEMORY_ID_PREFIX"

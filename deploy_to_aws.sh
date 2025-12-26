@@ -51,11 +51,7 @@ setup_environment_config() {
     fi
     
     # 環境別サフィックスの設定
-    if [ "$HEALTHMATE_ENV" = "prod" ]; then
-        ENV_SUFFIX=""
-    else
-        ENV_SUFFIX="-${HEALTHMATE_ENV}"
-    fi
+    ENV_SUFFIX="-${HEALTHMATE_ENV}"
     
     echo "📋 環境設定:"
     echo "   🌍 環境: $HEALTHMATE_ENV"
@@ -234,10 +230,7 @@ echo ""
 echo "🔧 AgentCore設定を実行中..."
 
 # エージェント名の生成（ハイフンをアンダースコアに変換）
-AGENT_NAME="healthmate_coach_ai"
-if [ "$HEALTHMATE_ENV" != "prod" ]; then
-    AGENT_NAME="${AGENT_NAME}_${HEALTHMATE_ENV}"
-fi
+AGENT_NAME="healthmate_coach_ai_${HEALTHMATE_ENV}"
 echo "🤖 エージェント名: $AGENT_NAME"
 
 agentcore configure \
