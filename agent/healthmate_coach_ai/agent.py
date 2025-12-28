@@ -214,17 +214,55 @@ async def _call_mcp_gateway(method: str, params: dict = None, access_token: str 
 # HealthManagerMCP統合ツール
 @tool
 async def list_health_tools() -> str:
-    """HealthManagerMCPで利用可能なツールのリストを取得"""
+    """HealthManagerMCPで利用可能なツールのリストを取得（ページング対応）"""
     try:
-        result = await _call_mcp_gateway_with_m2m("tools/list")
+        all_tools = []
+        cursor = None
+        page_count = 0
         
-        if not result or 'tools' not in result:
+        # nextCursorがnullになるまで全てのページを取得
+        while True:
+            page_count += 1
+            logger.debug(f"ツールリスト取得 - ページ {page_count}, cursor: {cursor}")
+            
+            # ページング用のパラメータを設定
+            params = {}
+            if cursor:
+                params["cursor"] = cursor
+            
+            result = await _call_mcp_gateway_with_m2m("tools/list", params)
+            
+            if not result:
+                logger.warning("MCP Gateway からの応答が空です")
+                break
+            
+            # 現在のページのツールを追加
+            if 'tools' in result:
+                current_tools = result['tools']
+                all_tools.extend(current_tools)
+                logger.debug(f"ページ {page_count}: {len(current_tools)}個のツールを取得")
+            
+            # nextCursorをチェック
+            next_cursor = result.get('nextCursor')
+            if not next_cursor:
+                logger.debug("nextCursorがnull - ページング完了")
+                break
+            
+            cursor = next_cursor
+            
+            # 無限ループ防止（最大10ページ）
+            if page_count >= 10:
+                logger.warning("ページング制限に達しました（最大10ページ）")
+                break
+        
+        if not all_tools:
             return "利用可能なツールが見つかりませんでした。"
         
-        tools = result['tools']
-        tool_descriptions = []
+        logger.info(f"合計 {len(all_tools)}個のツールを {page_count}ページから取得しました")
         
-        for tool in tools:
+        # ツール情報を整形
+        tool_descriptions = []
+        for tool in all_tools:
             name = tool.get('name', 'Unknown')
             description = tool.get('description', 'No description')
             input_schema = tool.get('inputSchema', {})
@@ -242,9 +280,10 @@ async def list_health_tools() -> str:
             
             tool_descriptions.append(tool_info)
         
-        return f"利用可能なHealthManagerMCPツール ({len(tools)}個):\n\n" + "\n".join(tool_descriptions)
+        return f"利用可能なHealthManagerMCPツール ({len(all_tools)}個、{page_count}ページから取得):\n\n" + "\n".join(tool_descriptions)
         
     except Exception as e:
+        logger.error(f"ツールリスト取得エラー: {e}")
         return f"ツールリスト取得エラー: {e}"
 
 
