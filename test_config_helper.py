@@ -35,7 +35,7 @@ class TestConfig:
             environment = 'dev'
         
         # 環境別サフィックスの設定
-        env_suffix = "" if environment == "prod" else f"-{environment}"
+        env_suffix = f"-{environment}"
         
         # 環境別スタック名の生成
         core_stack = f'Healthmate-CoreStack{env_suffix}'
