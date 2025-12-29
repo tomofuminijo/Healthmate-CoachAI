@@ -796,6 +796,167 @@ User Identity            Service Identity         Health Data
 9. Streaming Response (Back to UI)
 ```
 
+## 🎯 システムプロンプト管理
+
+### 環境別プロンプトファイル
+
+Healthmate-CoachAIは環境別にシステムプロンプトを管理し、各環境に最適化されたAI動作を提供します。
+
+#### ディレクトリ構造
+```
+agent/healthmate_coach_ai/prompts/
+├── coachai_system_prompt_dev.txt       # 開発環境用プロンプト
+├── coachai_system_prompt_stage.txt     # ステージング環境用プロンプト
+└── coachai_system_prompt_prod.txt      # 本番環境用プロンプト
+```
+
+#### 環境別の特徴
+
+| 環境 | ファイル名 | 特徴 |
+|------|-----------|------|
+| **dev** | `coachai_system_prompt_dev.txt` | デバッグ情報表示、詳細ログ出力、技術的エラー詳細 |
+| **stage** | `coachai_system_prompt_stage.txt` | 本番環境に近い動作、本番レベルエラー処理、パフォーマンス監視 |
+| **prod** | `coachai_system_prompt_prod.txt` | 本番環境用最適化、ユーザーフレンドリーなエラー処理 |
+
+#### 自動読み込み機能
+
+システムプロンプトは`HEALTHMATE_ENV`環境変数に基づいて自動的に選択・読み込みされます：
+
+```python
+# 環境変数による自動選択
+env = os.environ.get('HEALTHMATE_ENV', 'dev').lower()
+
+# プロンプトローダーによる読み込み
+from healthmate_coach_ai.prompt_loader import format_system_prompt
+
+system_prompt = format_system_prompt(
+    environment=env,
+    current_date=current_date,
+    current_weekday=current_weekday,
+    current_time=current_time,
+    timezone=user_info['timezone'],
+    language=user_info['language'],
+    actor_id=actor_id
+)
+```
+
+#### 動的変数注入
+
+システムプロンプト内では以下の動的変数が利用可能です：
+
+| 変数名 | 説明 | 例 |
+|--------|------|-----|
+| `{current_date}` | 現在の日付 | `2024年12月29日` |
+| `{current_weekday}` | 現在の曜日 | `月曜日` |
+| `{current_time}` | 現在の時刻 | `14時30分` |
+| `{timezone}` | ユーザーのタイムゾーン | `Asia/Tokyo` |
+| `{language}` | ユーザーの言語設定 | `ja` |
+| `{actor_id}` | ユーザーID | `cognito-user-id` |
+
+#### プロンプト管理のベストプラクティス
+
+##### 1. 環境別カスタマイズ
+```bash
+# 開発環境: デバッグ情報を含む詳細なプロンプト
+export HEALTHMATE_ENV=dev
+./deploy_to_aws.sh
+
+# 本番環境: ユーザーフレンドリーなプロンプト
+export HEALTHMATE_ENV=prod
+./deploy_to_aws.sh
+```
+
+##### 2. プロンプト編集後の反映
+```bash
+# プロンプトファイル編集後は再デプロイが必要
+vim agent/healthmate_coach_ai/prompts/coachai_system_prompt_dev.txt
+./deploy_to_aws.sh
+```
+
+##### 3. プロンプトの検証
+```bash
+# デプロイ後にプロンプトの動作を確認
+python manual_test_deployed_agent.py
+```
+
+#### SystemPromptLoaderクラス
+
+プロンプト管理は`SystemPromptLoader`クラスによって行われます：
+
+```python
+from healthmate_coach_ai.prompt_loader import SystemPromptLoader
+
+loader = SystemPromptLoader()
+
+# 利用可能な環境の確認
+environments = loader.get_available_environments()
+print(f"利用可能な環境: {environments}")  # ['dev', 'prod', 'stage']
+
+# 特定環境のプロンプト読み込み
+prompt = loader.load_system_prompt('prod')
+
+# 動的変数注入
+formatted_prompt = loader.format_system_prompt(
+    environment='prod',
+    current_date='2024年12月29日',
+    timezone='Asia/Tokyo',
+    actor_id='user-123'
+)
+```
+
+#### キャッシュ機能
+
+- **メモリキャッシュ**: 一度読み込んだプロンプトはメモリ上にキャッシュ
+- **パフォーマンス向上**: 繰り返し読み込みによる処理時間短縮
+- **キャッシュクリア**: 必要に応じて`clear_cache()`でキャッシュをクリア
+
+#### エラーハンドリング
+
+```python
+try:
+    system_prompt = format_system_prompt(environment='prod')
+except FileNotFoundError as e:
+    # プロンプトファイルが見つからない場合
+    logger.error(f"プロンプトファイルエラー: {e}")
+except Exception as e:
+    # 変数注入エラーなど
+    logger.error(f"プロンプト処理エラー: {e}")
+```
+
+#### プロンプト開発のワークフロー
+
+1. **開発環境でプロンプト編集**
+   ```bash
+   vim agent/healthmate_coach_ai/prompts/coachai_system_prompt_dev.txt
+   ```
+
+2. **開発環境でテスト**
+   ```bash
+   export HEALTHMATE_ENV=dev
+   ./deploy_to_aws.sh
+   python manual_test_deployed_agent.py
+   ```
+
+3. **ステージング環境で検証**
+   ```bash
+   # dev環境のプロンプトをstage環境にコピー
+   cp agent/healthmate_coach_ai/prompts/coachai_system_prompt_dev.txt \
+      agent/healthmate_coach_ai/prompts/coachai_system_prompt_stage.txt
+   
+   export HEALTHMATE_ENV=stage
+   ./deploy_to_aws.sh
+   ```
+
+4. **本番環境にデプロイ**
+   ```bash
+   # stage環境で検証済みのプロンプトをprod環境にコピー
+   cp agent/healthmate_coach_ai/prompts/coachai_system_prompt_stage.txt \
+      agent/healthmate_coach_ai/prompts/coachai_system_prompt_prod.txt
+   
+   export HEALTHMATE_ENV=prod
+   ./deploy_to_aws.sh
+   ```
+
 ## 📁 プロジェクト構成
 
 ```
@@ -804,7 +965,12 @@ Healthmate-CoachAI/
 │   ├── healthmate_coach_ai/
 │   │   ├── __init__.py
 │   │   ├── agent.py                    # メインエージェント実装（M2M認証+Memory統合）
-│   │   └── m2m_auth_config.py          # M2M認証設定
+│   │   ├── m2m_auth_config.py          # M2M認証設定
+│   │   ├── prompt_loader.py            # システムプロンプトローダー
+│   │   └── prompts/                    # 環境別システムプロンプト
+│   │       ├── coachai_system_prompt_dev.txt    # 開発環境用
+│   │       ├── coachai_system_prompt_stage.txt  # ステージング環境用
+│   │       └── coachai_system_prompt_prod.txt   # 本番環境用
 │   ├── requirements.txt                # Runtime専用依存関係（最小構成）
 │   └── .dockerignore                   # Docker除外設定
 ├── manual_test_deployed_agent.py       # デプロイ済みエージェントテスト（推奨）
