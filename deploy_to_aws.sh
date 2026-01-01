@@ -132,7 +132,7 @@ configure_memory_strategies() {
     {
       "episodicMemoryStrategy": {
         "name": "healthmate_episode",
-        "namespaces": ["/healthmate/episodes/actors/{actorId}"],
+        "namespaces": ["/healthmate/episodes/actors/{actorId}/sessions/{sessionId}"],
         "reflectionConfiguration": {
           "namespaces": ["/healthmate/episodes/actors/{actorId}"]
         }
@@ -411,13 +411,13 @@ echo "   ✅ AGENTCORE_PROVIDER_NAME: $PROVIDER_NAME"
 # AgentCore デプロイを実行（環境変数追加）
 echo ""
 echo "🚀 AgentCore デプロイを開始..."
-# agentcore launch \
-#     --env HEALTHMANAGER_GATEWAY_ID="$GATEWAY_ID" \
-#     --env AWS_REGION="$AWS_REGION" \
-#     --env HEALTHMATE_AI_MODEL="$HEALTHMATE_AI_MODEL" \
-#     --env HEALTHMATE_ENV="$HEALTHMATE_ENV" \
-#     --env HEALTHMATE_LOG_LEVEL="$LOG_LEVEL" \
-#     --env AGENTCORE_PROVIDER_NAME="$PROVIDER_NAME"
+agentcore launch \
+    --env HEALTHMANAGER_GATEWAY_ID="$GATEWAY_ID" \
+    --env AWS_REGION="$AWS_REGION" \
+    --env HEALTHMATE_AI_MODEL="$HEALTHMATE_AI_MODEL" \
+    --env HEALTHMATE_ENV="$HEALTHMATE_ENV" \
+    --env HEALTHMATE_LOG_LEVEL="$LOG_LEVEL" \
+    --env AGENTCORE_PROVIDER_NAME="$PROVIDER_NAME"
 
 echo ""
 echo "✅ AgentCore デプロイが完了しました！"

@@ -16,7 +16,7 @@ from datetime import datetime
 import pytz
 from strands import Agent, tool
 from bedrock_agentcore.runtime import BedrockAgentCoreApp, BedrockAgentCoreContext
-from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
+from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig, RetrievalConfig
 from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
 from healthmate_coach_ai.m2m_auth_config import M2MAuthConfig
 from healthmate_coach_ai.prompt_loader import format_system_prompt
@@ -346,18 +346,27 @@ async def _create_health_coach_agent_with_memory(session_id: str, actor_id: str)
         memory_id=memory_id,
         session_id=session_id,
         actor_id=actor_id,
-        retrieval_config={
-            "/preferences/{actorId}": RetrievalConfig(
+        # 長期メモリ戦略
+        retrieval_config={ 
+            "/healthmate/userpreferences/actors/{actorId}": RetrievalConfig(
                 top_k=5,
                 relevance_score=0.7
             ),
-            "/facts/{actorId}": RetrievalConfig(
+            "/healthmate/semantics/actors/{actorId}": RetrievalConfig(
                 top_k=10,
-                relevance_score=0.3
+                relevance_score=0.7
             ),
-            "/summaries/{actorId}/{sessionId}": RetrievalConfig(
+            "/healthmate/summaries/actors/{actorId}/sessions/": RetrievalConfig(
                 top_k=5,
-                relevance_score=0.5
+                relevance_score=0.6
+            ),
+            "/healthmate/episodes/actors/{actorId}/sessions/": RetrievalConfig(
+                top_k=5,             
+                relevance_score=0.6  
+            ),
+            "/healthmate/episodes/actors/{actorId}": RetrievalConfig(
+                top_k=3,             
+                relevance_score=0.75 
             )
         }
     )
