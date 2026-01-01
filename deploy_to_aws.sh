@@ -257,7 +257,8 @@ echo "   🔐 認証方式: JWT (Cognito)"
 echo "   🔑 JWT Discovery URL: $JWT_DISCOVERY_URL"
 
 # AIモデル設定
-HEALTHMATE_AI_MODEL=${HEALTHMATE_AI_MODEL:-"global.amazon.nova-2-lite-v1:0"}
+HEALTHMATE_AI_MODEL=${HEALTHMATE_AI_MODEL:-"global.anthropic.claude-haiku-4-5-20251001-v1:0"}
+#HEALTHMATE_AI_MODEL=${HEALTHMATE_AI_MODEL:-"global.amazon.nova-2-lite-v1:0"}
 #HEALTHMATE_AI_MODEL=${HEALTHMATE_AI_MODEL:-"global.anthropic.claude-sonnet-4-5-20250929-v1:0"}
 
 echo ""
