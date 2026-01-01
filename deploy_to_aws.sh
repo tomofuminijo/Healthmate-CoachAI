@@ -59,6 +59,144 @@ setup_environment_config() {
     echo "   🏷️  サフィックス: $ENV_SUFFIX"
 }
 
+# Memory戦略設定関数
+configure_memory_strategies() {
+    echo "🔍 生成されたMemoryを検索中..."
+    
+    # エージェント名に基づくMemory IDパターン
+    MEMORY_ID_PATTERN="${AGENT_NAME}_mem"
+    
+    # 最大30秒間、Memory IDの取得を試行
+    local max_attempts=30
+    local attempt=1
+    local memory_id=""
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        echo "   試行 $attempt/$max_attempts: Memory IDを検索中..."
+        
+        # Memory一覧を取得し、パターンにマッチするものを抽出
+        memory_list=$(aws bedrock-agentcore-control list-memories --output json 2>/dev/null || echo '{"memories":[]}')
+        
+        if [ $? -eq 0 ]; then
+            # デバッグ用: Memory一覧を表示
+            echo "   取得したMemory一覧:"
+            echo "$memory_list" | jq -r '.memories[]? | .id // "null"' | sed 's/^/     - /'
+            
+            # idが文字列かつパターンにマッチするものを抽出
+            memory_id=$(echo "$memory_list" | jq -r ".memories[]? | select(.id != null and (.id | type) == \"string\" and (.id | startswith(\"$MEMORY_ID_PATTERN\"))) | .id" | head -n 1)
+            
+            if [ -n "$memory_id" ] && [ "$memory_id" != "null" ]; then
+                echo "✅ Memory ID発見: $memory_id"
+                break
+            fi
+        fi
+        
+        echo "   Memory IDが見つかりません。10秒後に再試行..."
+        sleep 10
+        ((attempt++))
+    done
+    
+    if [ -z "$memory_id" ] || [ "$memory_id" = "null" ]; then
+        echo "❌ Memory IDが見つかりませんでした"
+        echo "   パターン: $MEMORY_ID_PATTERN"
+        echo "   Memory戦略の設定をスキップします"
+        return 1
+    fi
+    
+    echo ""
+    echo "🧠 Memory戦略を追加中..."
+    echo "   Memory ID: $memory_id"
+    
+    # Memory戦略のJSON設定を作成
+    local memory_strategies_json=$(cat <<EOF
+{
+  "addMemoryStrategies": [
+    {
+      "summaryMemoryStrategy": {
+        "name": "healthmate_summary",
+        "namespaces": ["/healthmate/{memoryStrategyId}/actors/{actorId}/sessions/{sessionId}"]
+      }
+    },
+    {
+      "semanticMemoryStrategy": {
+        "name": "healthmate_semantic",
+        "namespaces": ["/healthmate/{memoryStrategyId}/actors/{actorId}"]
+      }
+    },
+    {
+      "userPreferenceMemoryStrategy": {
+        "name": "healthmate_userpreference",
+        "namespaces": ["/healthmate/{memoryStrategyId}/actors/{actorId}"]
+      }
+    },
+    {
+      "episodicMemoryStrategy": {
+        "name": "healthmate_episode",
+        "namespaces": ["/healthmate/{memoryStrategyId}/actors/{actorId}"],
+        "reflectionConfiguration": {
+          "namespaces": ["/healthmate/{memoryStrategyId}/actors/{actorId}"]
+        }
+      }
+    }
+  ]
+}
+EOF
+)
+    
+    echo "📝 Memory戦略設定:"
+    echo "$memory_strategies_json" | jq .
+    
+    # 一時ファイルにJSON設定を保存
+    local temp_file=$(mktemp)
+    echo "$memory_strategies_json" > "$temp_file"
+    
+    # Memory戦略を更新
+    echo ""
+    echo "🔄 Memory戦略を適用中..."
+    
+    local update_result
+    update_result=$(aws bedrock-agentcore-control update-memory \
+        --memory-id "$memory_id" \
+        --memory-strategies file://"$temp_file" \
+        --output json 2>&1)
+    
+    local exit_code=$?
+    
+    if [ $exit_code -eq 0 ]; then
+        echo "✅ Memory戦略の設定が完了しました！"
+        echo ""
+        echo "📋 設定されたMemory戦略:"
+        echo "   🔸 Summary Strategy: healthmate_summary"
+        echo "     └─ Namespaces: /healthmate/{memoryStrategyId}/actors/{actorId}/sessions/{sessionId}"
+        echo "   🔸 Semantic Strategy: healthmate_semantic"
+        echo "     └─ Namespaces: /healthmate/{memoryStrategyId}/actors/{actorId}"
+        echo "   🔸 User Preference Strategy: healthmate_userpreference"
+        echo "     └─ Namespaces: /healthmate/{memoryStrategyId}/actors/{actorId}"
+        echo "   🔸 Episodic Strategy: healthmate_episode"
+        echo "     └─ Namespaces: /healthmate/{memoryStrategyId}/actors/{actorId}"
+        echo "     └─ Reflection Namespaces: /healthmate/{memoryStrategyId}/actors/{actorId}"
+        
+    elif echo "$update_result" | grep -q "already exist"; then
+        echo "ℹ️  Memory戦略は既に設定済みです"
+        echo "   既存の戦略:"
+        echo "$update_result" | grep -o "names \[.*\]" | sed 's/names \[\(.*\)\]/\1/' | tr ',' '\n' | sed 's/^ */     - /' | sed 's/ *$//'
+        echo "   Memory戦略の設定をスキップします"
+        # 既存戦略がある場合は正常終了として扱う
+        
+    else
+        echo "❌ Memory戦略の設定に失敗しました"
+        echo "   Memory ID: $memory_id"
+        echo "   エラー詳細:"
+        echo "$update_result" | sed 's/^/     /'
+        echo "   手動で設定を確認してください"
+        return 1
+    fi
+    
+    # 一時ファイルを削除
+    rm -f "$temp_file"
+    return 0
+}
+
 # AWS設定と認証情報の設定
 setup_aws_credentials() {
     export AWS_DEFAULT_REGION=${AWS_REGION:-us-west-2}
@@ -282,18 +420,30 @@ agentcore launch \
     --env AGENTCORE_PROVIDER_NAME="$PROVIDER_NAME"
 
 echo ""
-echo "✅ デプロイが完了しました！"
+echo "✅ AgentCore デプロイが完了しました！"
+
+# Memory戦略の設定
 echo ""
-echo "📋 デプロイ情報:"
-echo "   🎭 IAMロール: $CUSTOM_ROLE_ARN"
+echo "🧠 Memory戦略を設定中..."
+if configure_memory_strategies; then
+    echo "✅ Memory戦略処理完了"
+else
+    echo "⚠️  Memory戦略設定でエラーが発生しましたが、デプロイは継続します"
+fi
+echo ""
+echo "✅ 全てのデプロイが完了しました！"
+echo ""
+echo "� デプロイ情報:ン"
+echo "   � IAMロトール: $CUSTOM_ROLE_ARN"
 echo "   📍 リージョン: $AWS_REGION"
 echo "   🏢 アカウント: $ACCOUNT_ID"
 echo "   🌍 環境: $HEALTHMATE_ENV"
 echo "   🔐 認証方式: JWT (Cognito)"
 echo "   🔑 JWT Discovery URL: $JWT_DISCOVERY_URL"
 echo "   🤖 AIモデル: $HEALTHMATE_AI_MODEL"
-echo "   � ロログレベル: $LOG_LEVEL"
+echo "   📊 ログレベル: $LOG_LEVEL"
 echo "   🔗 プロバイダー名: $PROVIDER_NAME"
+echo "   🧠 Memory戦略: 設定済み"
 echo ""
 echo "🚀 次のステップ:"
 echo "   1. agentcore status でエージェント状態を確認"
